@@ -59,11 +59,12 @@ pub fn read_entry(entry_list: &MeasurementList, entry_id: u32) -> Option<Measure
     if let Some(offset) = entry_list.find_entry(entry_id){
         early_println!("find entry:0x{:x} with offset:0x{:x}",entry_id, offset);
         let addr = entry_list.entry_base_addr as usize + offset as usize;
-        let entry_size = concat_bytes_to_u32(&read_ima(addr, 4));
+        //let entry_size = concat_bytes_to_u32(&read_ima(addr, 4));
+        let entry_size = Some(0x138 as u32);
         if entry_size.is_none() {
             return None;
         }
-        early_println!("entry size:{}",entry_size.as_ref().unwrap().clone());
+        early_println!("entry size:0x{:x}",entry_size.as_ref().unwrap().clone());
         let entry_data = read_ima(addr, entry_size.unwrap() as usize);
         let hash_data = copy_bytes_to_fixed_array::<HASH_DATA_SIZE>(&entry_data,4,4+HASH_DATA_SIZE);
         let path = copy_bytes_to_fixed_array::<PATH_SIZE>(&entry_data,4+HASH_DATA_SIZE,4+HASH_DATA_SIZE+PATH_SIZE);

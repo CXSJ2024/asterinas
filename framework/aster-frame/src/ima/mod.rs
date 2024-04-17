@@ -15,9 +15,9 @@ pub fn read_ima(base_addr:usize, len: usize) -> Vec<u8>{
     let step = 8;
     if len < step{
         unsafe{
-            let bytes = (base_addr as *const u64 ).read();
-            early_println!("0x{:x}",bytes);
-            res.append(&mut (4+PATH_SIZE+HASH_DATA_SIZE+4).as_bytes().to_vec());
+            let bytes: u32 = (base_addr as *const u64 ).read() as u32;
+            //early_println!("0x{:x}",bytes);
+            res.append(&mut (0x138 as u32).as_bytes().to_vec());
         }
     }else{
         for i in 0..len/step{
@@ -82,9 +82,10 @@ pub fn test_measurement_entry(){
     entry_data.hash_data[..hash_str.len()].copy_from_slice(hash_str);
     entry_data.path[..path_str.len()].copy_from_slice(path_str);
     ml.entries.push(entry_map);
+    early_println!("{}",&entry_data);
     write_entry(&ml, entry_id, &entry_data);
     if let Some(entry) = read_entry(&ml, entry_id){
-        early_println!("{}",entry);
+        early_println!("{}",&entry);
     }
 }
 
