@@ -15,7 +15,7 @@ use crate::util::get_cargo_metadata;
 pub fn new_base_crate(
     base_crate_path: impl AsRef<Path>,
     dep_crate_name: &str,
-    dep_crate_path: impl AsRef<Path>,
+    dep_crate_path: impl AsRef<Path>
 ) {
     let workspace_root = {
         let meta = get_cargo_metadata(None::<&str>, None::<&[&str]>).unwrap();
@@ -60,6 +60,7 @@ pub fn new_base_crate(
     // Add linker.ld file
     let linker_ld = include_str!("x86_64.ld.template");
     fs::write("x86_64.ld", linker_ld).unwrap();
+
 
     // Overrite the main.rs file
     let main_rs = include_str!("main.rs.template");

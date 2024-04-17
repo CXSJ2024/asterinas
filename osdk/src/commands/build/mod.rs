@@ -47,11 +47,12 @@ pub fn create_base_and_build(
     config: &BuildConfig,
     rustflags: &[&str],
 ) -> Bundle {
+    let with_ima = config.manifest.kcmd_args.contains(&"ima".to_string());
     let base_crate_path = osdk_target_directory.as_ref().join("base");
     new_base_crate(
         &base_crate_path,
         &get_current_crate_info().name,
-        get_current_crate_info().path,
+        get_current_crate_info().path
     );
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(&base_crate_path).unwrap();

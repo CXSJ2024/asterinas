@@ -43,6 +43,7 @@ pub mod trap;
 pub mod user;
 mod util;
 pub mod vm;
+pub mod ima;
 
 #[cfg(feature = "intel_tdx")]
 use tdx_guest::init_tdx;
@@ -66,6 +67,7 @@ pub fn init() {
     trap::init();
     arch::after_all_init();
     bus::init();
+    ima::test();
     invoke_ffi_init_funcs();
 }
 

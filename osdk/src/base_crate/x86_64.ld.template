@@ -37,6 +37,12 @@ SECTIONS
         KEEP(*(.eh_frame .eh_frame.*))
     }
 
+    . = ALIGN(8);
+    .ima                    : AT(ADDR(.ima) - KERNEL_VMA) {
+        PROVIDE(__ima = .);
+        KEEP(*(.ima .ima.*))
+    }
+
     .gcc_except_table       : AT(ADDR(.gcc_except_table) - KERNEL_VMA) { *(.gcc_except_table .gcc_except_table.*) }
 
     .data.rel.ro            : AT(ADDR(.data.rel.ro) - KERNEL_VMA) { *(.data.rel.ro .data.rel.ro.*) }

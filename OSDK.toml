@@ -4,7 +4,7 @@ kcmd_args = [
     "HOME=/",
     "USER=root",
     "PATH=/bin:/benchmark",
-    "init=/usr/bin/busybox",
+    "init=/usr/bin/busybox"
 ]
 init_args = ["sh", "-l"]
 initramfs = "regression/build/initramfs.cpio.gz"
