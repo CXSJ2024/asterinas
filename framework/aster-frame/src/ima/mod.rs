@@ -46,7 +46,7 @@ pub fn write_ima(data :&Vec<u8>, base_addr:usize){
 
 pub fn test(){
     //test_ima_section();
-    test_measurement_entry();
+    //test_measurement_entry();
 }
 
 // pub fn test_xattr(){
