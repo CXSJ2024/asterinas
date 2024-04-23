@@ -46,13 +46,9 @@ pub fn write_ima(data :&Vec<u8>, base_addr:usize){
 
 pub fn test(){
     //test_ima_section();
-    //test_measurement_entry();
+    test_measurement_entry();
 }
 
-// pub fn test_xattr(){
-//     let tmp = tempfile_in("/var/tmp").unwrap();
-//     assert!(tmp.get_xattr("user.test").unwrap().is_none());
-// }
 
 pub fn test_ima_section(){
     let mut data = Vec::new();
@@ -74,15 +70,14 @@ pub fn test_measurement_entry(){
         length: (4+HASH_DATA_SIZE+PATH_SIZE+4) as u32,
         hash_data: [0;HASH_DATA_SIZE],
         path: [0;PATH_SIZE],
-        fields: 0x40400000,
+        fields: 0x41_41_41_41,
     };
     let entry_map = EntryMap::new(entry_id,entry_offest);
     let hash_str = "this_is_hash_test".as_bytes();
-    let path_str = "root/asterinas/regression/apps/test_ami/test".as_bytes();
+    let path_str = "/regression/hello_world/hello_world".as_bytes();
     entry_data.hash_data[..hash_str.len()].copy_from_slice(hash_str);
     entry_data.path[..path_str.len()].copy_from_slice(path_str);
     ml.entries.push(entry_map);
-    early_println!("{}",&entry_data);
     write_entry(&ml, entry_id, &entry_data);
     if let Some(entry) = read_entry(&ml, entry_id){
         early_println!("{}",&entry);

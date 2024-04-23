@@ -14,5 +14,5 @@ pub fn get_xattr(abs_path:&str, attr:&str) -> Result<XattrEntry,Errno>{
             return Ok(entry);
         }
     }
-    Err(Errno::EBADF)
+    Err(Errno::ENOTXATTR)
 }

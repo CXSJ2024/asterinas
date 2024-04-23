@@ -1,4 +1,4 @@
-use core::fmt::Display;
+use core::{cmp::min, fmt::Display};
 
 use alloc::{string::String, vec::Vec};
 use pod::Pod;
@@ -14,7 +14,7 @@ pub struct MeasurementEntry{
     pub length: u32,
     pub hash_data: [u8;HASH_DATA_SIZE],     // 48 bytes hash data
     pub path: [u8;PATH_SIZE],               // 255 bytes file name
-    pub fields: u64                         // reserved fields
+    pub fields: u32                         // reserved fields
 }
 
 impl Display for MeasurementEntry{
@@ -57,24 +57,18 @@ fn copy_bytes_to_fixed_array<const N: usize>(bytes: &Vec<u8>, start: usize, end:
 
 pub fn read_entry(entry_list: &MeasurementList, entry_id: u32) -> Option<MeasurementEntry>{
     if let Some(offset) = entry_list.find_entry(entry_id){
-        early_println!("find entry:0x{:x} with offset:0x{:x}",entry_id, offset);
         let addr = entry_list.entry_base_addr as usize + offset as usize;
         //let entry_size = concat_bytes_to_u32(&read_ima(addr, 4));
-        let entry_size = Some(0x138 as u32);
-        if entry_size.is_none() {
-            return None;
-        }
-        early_println!("entry size:0x{:x}",entry_size.as_ref().unwrap().clone());
-        let entry_data = read_ima(addr, entry_size.unwrap() as usize);
+        let entry_size = Some((4+HASH_DATA_SIZE+PATH_SIZE+4) as u32).unwrap() ;
+        let entry_data = read_ima(addr, entry_size as usize);
         let hash_data = copy_bytes_to_fixed_array::<HASH_DATA_SIZE>(&entry_data,4,4+HASH_DATA_SIZE);
         let path = copy_bytes_to_fixed_array::<PATH_SIZE>(&entry_data,4+HASH_DATA_SIZE,4+HASH_DATA_SIZE+PATH_SIZE);
-        let fields = concat_bytes_to_u64(&entry_data[(4+HASH_DATA_SIZE+PATH_SIZE)..].to_vec());
+        let fields = concat_bytes_to_u32(&entry_data[(4+HASH_DATA_SIZE+PATH_SIZE)..].to_vec());
         if hash_data.is_none() || fields.is_none() || path.is_none(){
             return None;
         }
-        early_println!("read new entry complete");
         Some(MeasurementEntry{
-            length: entry_size.unwrap(),
+            length: entry_size,
             hash_data: hash_data.unwrap(),
             path: path.unwrap(),
             fields: fields.unwrap(),
@@ -87,7 +81,6 @@ pub fn read_entry(entry_list: &MeasurementList, entry_id: u32) -> Option<Measure
 
 pub fn write_entry(entry_list: &MeasurementList, entry_id: u32, entry_data: &MeasurementEntry){
     if let Some(offset) = entry_list.find_entry(entry_id){
-        early_println!("find entry:0x{:x} with offset:0x{:x}",entry_id, offset);
         let addr = entry_list.entry_base_addr as usize + offset as usize;
         let mut data:Vec<u8> = Vec::new();
         data.append(&mut entry_data.length.as_bytes().to_vec());

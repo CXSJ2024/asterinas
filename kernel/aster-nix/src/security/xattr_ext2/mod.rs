@@ -89,11 +89,23 @@ pub fn xattr_init() -> Option<Xattr>{
 }
 
 pub fn test(){
-    let abs_path = "/regression/hello_world/hello_world";
-    set_xattr(abs_path, "security.ima","hash_data");
-    set_xattr(abs_path, "user.field","user value");
-    println!("{:?}",list_attr(abs_path).unwrap());
-    println!("Get security.ima attribute:{:?}",get_xattr(abs_path, "security.ima").unwrap().value);
+    // user executable files
+    let abs_path1 = "/regression/hello_world/hello_world";
+    let abs_path2 = "/regression/execve/hello";
+
+    // empty before set_xattr
+    println!("Attributes is empty?  {}",list_attr(abs_path1).is_err());
+
+    // set xattr
+    set_xattr(abs_path1, "deedbeef.field","invalue attribute");
+    set_xattr(abs_path1, "user.field","user value");
+    set_xattr(abs_path1, "security.ima","file1_hash_data1");
+    set_xattr(abs_path1, "security.ima","file1_hash_data2");
+    set_xattr(abs_path2, "security.ima","file2_hash_data");
+
+    // test result
+    println!("List attributes:{:?}",list_attr(abs_path1).unwrap());
+    println!("Get security.ima attribute:{:?}",get_xattr(abs_path1, "security.ima").unwrap().value);
 }
 
 
