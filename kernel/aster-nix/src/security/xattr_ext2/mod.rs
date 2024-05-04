@@ -1,6 +1,3 @@
-use core::borrow::Borrow;
-use core::fmt::Display;
-
 use alloc::format;
 use alloc::string::ToString;
 use alloc::{sync::Arc, vec::Vec};
@@ -8,7 +5,6 @@ use crate::fs::fs_resolver::{FsResolver,FsPath};
 use crate::security::xattr_ext2::getfattr::get_xattr;
 use crate::security::xattr_ext2::listfattr::list_attr;
 use crate::{fs::utils::InodeMode, println};
-use crate::fs::ext2::Ext2;
 use crate::fs::utils::Inode;
 use crate::String;
 use crate::Errno;

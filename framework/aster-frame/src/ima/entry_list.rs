@@ -1,63 +1,71 @@
 
-use alloc::vec::Vec;
+use alloc::{collections::BTreeMap, vec::Vec};
+use spin::{Mutex, MutexGuard};
 
-use super::ima_begin;
+
+use super::{entry::MeasurementEntry, tpm::{self, PcrOp, TPM}};
+
+static IMA_MEASUREMENT_LIST:Mutex<MeasurementList> = Mutex::new(MeasurementList::default());
 
 pub struct MeasurementList{
-    pub entry_base_addr: u64,   // .ima section base addrest
-    pub version: u8,            // magic version = 1
-    pub appraise: u8,           // 0 for disable ima, 1 for fix mode.
-    pub policy: u8,             // 1 for all executable files.
-    pub template: u8,           // entry format template, 1 for 'ima'.
-    pub entries: Vec<EntryMap>
+    pub version: u8,            // magic value = 1
+    pub appraise: u8,           // 0:disable ima, 1:fix mode.
+    pub policy: u8,             // default 1 for all files.
+    pub template: u8,           // entry format template, default is '1:ima'.
+    inner: BTreeMap<u64, MeasurementEntry> // entry
 }
+
 
 
 
 
 
 impl MeasurementList {
-    pub fn default() -> Self{
+    const fn default() -> Self{
         MeasurementList{
-            entry_base_addr:ima_begin() as u64,
             version: 1,
             appraise: 1,
             policy: 1,
             template: 1,
-            entries: Vec::new(),
+            inner: BTreeMap::new(),
         }
     }
 
+    pub fn get_list() -> MutexGuard<'static,Self>{
+        IMA_MEASUREMENT_LIST.lock()
+    }
 
+    pub fn reset_tpm(){
+        TPM::op().reset_all();
+    }
 
-    pub fn find_entry(&self,id:u32) -> Option<u32>{
-        if self.entries.is_empty() {
-            return None;
-        }
-        let magic_entry = self.entries.get(0).unwrap();
-        if magic_entry.id == id {
-            Some(magic_entry.offset)
-        } else{
-            None
-        }
+    pub fn get_all(&self) -> Vec<MeasurementEntry>{
+        self.inner.values().cloned().collect()
+    }
+
+    pub fn get_entry(&self,id:u64) -> Option<&MeasurementEntry>{
+        self.inner.get(&id)
+    }
+
+    pub fn add_entry(&mut self,entry:MeasurementEntry){
+        TPM::op().extend_pcr(tpm::DEFAULT_PCR_REGISTER as u32, entry.template_hash);
+        let entry_id = self.inner.len() + 1;
+        self.inner.insert(entry_id as u64, entry);
     }
 
 
+    pub fn vertify_tpm(&self) -> bool{
+        let entries = self.get_all();
+        let mut tmp_data:tpm::PcrValue = [0;tpm::PCR_BITSIZE];
+        for entry in entries{
+            tmp_data = tpm::default_extended(tmp_data, entry.template_hash);
+        }
+        
+        tmp_data == TPM::op().read_pcr(tpm::DEFAULT_PCR_REGISTER as u32)
+    }
 }
 
 
 
-pub struct EntryMap{
-    pub id:u32,                 // entry id, store in fattr
-    pub offset:u32,             // entry address (entry_base_addr + offset) 
-}
 
 
-impl EntryMap {
-    pub fn new(id: u32, offset:u32) -> Self{
-        EntryMap{
-            id,
-            offset,
-        }
-    }
-}

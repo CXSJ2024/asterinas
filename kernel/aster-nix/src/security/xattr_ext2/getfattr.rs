@@ -1,8 +1,5 @@
-use alloc::string::String;
-
 use crate::alloc::vec::Vec;
 use super::listfattr::list_attr;
-use super::Xattr;
 use super::XattrEntry;
 use crate::Errno;
 

@@ -1,9 +1,8 @@
 use alloc::string::ToString;
-use core2::error::Error;
+
 
 use crate::Errno;
 use crate::alloc::vec::Vec;
-use crate::fs::fs_resolver;
 use crate::fs::fs_resolver::FsPath;
 use crate::fs::fs_resolver::FsResolver;
 use super::Xattr;
