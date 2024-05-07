@@ -1,6 +1,6 @@
+use core::hash::BuildHasherDefault;
 use spin::{Mutex, MutexGuard};
 use ram_tpm::RAMTpm;
-
 use crate::early_println;
 
 pub mod ram_tpm;
@@ -28,10 +28,11 @@ impl TPM {
     }
 }
 
-// sha1(read_pcr(reg)||data)
+// sha(read_pcr(reg)||data)
 pub fn default_extended(old_data:PcrValue,new_data:PcrValue) -> PcrValue{
     let mut result = [old_data,new_data].concat();
+    //let hash = Sha256::digest(&result[..]);
     let mut res = [0 as u8;PCR_BITSIZE];
-    res.copy_from_slice(&result[10..10+PCR_BITSIZE]);
+    res.copy_from_slice(&result[..PCR_BITSIZE]);
     res
 }

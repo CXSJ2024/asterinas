@@ -22,7 +22,6 @@ pub fn test_measurement_entry(){
     MeasurementList::reset_tpm();
     let mut ml = MeasurementList::get_list();
     // test data
-    let entry_offest = 0x8;
     let entry_data1 = MeasurementEntry{
         pcr: 10,
         template_hash: [0xa;20],
@@ -47,9 +46,13 @@ pub fn test_measurement_entry(){
     ml.add_entry(entry_data1);
     ml.add_entry(entry_data2);
     ml.add_entry(entry_data3);
-    early_println!("measurement list content:{:?}",ml.get_all());
-    early_println!("measurement list integrity:{}",ml.vertify_tpm());
+    let ml_data = ml.get_all();
+    for e in ml_data{
+        early_println!("{}",e);
+    }
+    early_println!("measurement list integrity:{}",ml.verify_ml());
 }
+
 
 
 

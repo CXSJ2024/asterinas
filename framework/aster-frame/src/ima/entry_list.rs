@@ -1,5 +1,5 @@
 
-use alloc::{collections::BTreeMap, vec::Vec};
+use alloc::{collections::BTreeMap, format, vec::Vec};
 use spin::{Mutex, MutexGuard};
 
 
@@ -43,6 +43,7 @@ impl MeasurementList {
         self.inner.values().cloned().collect()
     }
 
+
     pub fn get_entry(&self,id:u64) -> Option<&MeasurementEntry>{
         self.inner.get(&id)
     }
@@ -54,7 +55,7 @@ impl MeasurementList {
     }
 
 
-    pub fn vertify_tpm(&self) -> bool{
+    pub fn verify_ml(&self) -> bool{
         let entries = self.get_all();
         let mut tmp_data:tpm::PcrValue = [0;tpm::PCR_BITSIZE];
         for entry in entries{

@@ -18,7 +18,7 @@ pub struct MeasurementEntry{
 
 impl Display for MeasurementEntry{
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "MeasurementEntry[\n pcr:{}, \n template-hash:{:?},\n filedata-hash:{:?},\n filename-hint:{}]",
+        write!(f, "pcr:{}\t template-hash:{:x?}\t filedata-hash:{:x?}\t filename-hint:{}]",
         self.pcr, 
         self.template_hash, 
         self.filedata_hash, 
