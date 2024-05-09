@@ -78,7 +78,7 @@ pub fn xattr_init() -> Option<Xattr>{
             xattr_block: inode,
         })
     }else{
-        println!("[kernel] Securrity File Extended Attribute fail");
+        println!("[kernel] Securrity Extended File Attribute init fail");
         None
     }
     
