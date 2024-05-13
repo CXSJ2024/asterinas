@@ -32,6 +32,7 @@ impl TPM {
 pub fn default_extended(old_data:PcrValue,new_data:PcrValue) -> PcrValue{
     let mut result = [old_data,new_data].concat();
     //let hash = Sha256::digest(&result[..]);
+    todo!();
     let mut res = [0 as u8;PCR_BITSIZE];
     res.copy_from_slice(&result[..PCR_BITSIZE]);
     res

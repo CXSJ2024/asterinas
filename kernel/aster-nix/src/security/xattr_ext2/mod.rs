@@ -29,6 +29,10 @@ pub struct XattrEntry{
 
 const XATTR_PATH :&str = "/xattr";
 
+const USER_EXECUTABLE_PREFIX :&str = "/regression/"; 
+
+const IMA_XATTR_KEY :&str = "security.ima";
+
 impl Xattr{
     pub fn xattr_handler() -> Result<Self,Errno>{
         let resolver = FsResolver::new();
@@ -72,8 +76,9 @@ pub fn xattr_init() -> Option<Xattr>{
     let root_inode = fs_resolver.root().inode();
     let xattr_inode = root_inode.create(&XATTR_PATH[1..], crate::fs::utils::InodeType::File, InodeMode::all());
     if let Ok(inode) = xattr_inode {
+        let _ = Xattr::xattr_handler();
+        let _ = measure_all(&fs_resolver,USER_EXECUTABLE_PREFIX);    
         println!("[kernel] File extended attribute in inode #{}",inode.metadata().ino);
-        Xattr::xattr_handler();
         Some(Xattr{
             xattr_block: inode,
         })
@@ -81,7 +86,25 @@ pub fn xattr_init() -> Option<Xattr>{
         println!("[kernel] Securrity Extended File Attribute init fail");
         None
     }
-    
+}
+
+fn measure_all(resolver: &FsResolver,root_dir:&str) -> crate::prelude::Result<()>{
+    let fs_handler = {
+        let path = FsPath::new(0, root_dir)?;
+        resolver.open(&path, 0, 0)?
+    };
+    if fs_handler.dentry().type_().is_reguler_file(){
+        let measurement = "todo()!";
+        set_xattr(root_dir, IMA_XATTR_KEY, measurement);
+    }else if fs_handler.dentry().type_().is_directory(){
+        let mut items:Vec<String> = Vec::new();
+        fs_handler.readdir(&mut items);
+        for item in items{
+            let abs_path = format!("{}/{}",root_dir,item.to_string());
+            measure_all(resolver,abs_path.as_str());
+        }
+    }
+    Ok(())
 }
 
 pub fn test(){
