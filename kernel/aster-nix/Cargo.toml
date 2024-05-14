@@ -57,6 +57,7 @@ core2 = { version = "0.4", default_features = false, features = ["alloc"] }
 lending-iterator = "0.1.7"
 spin = "0.9.4"
 vte = "0.10"
+sha2 = { version = "0.10.2", default-features = false ,features=["force-soft"]}
 lru = "0.12.3"
 log = "0.4"
 getrandom = { version = "0.2.10", default-features = false, features = [

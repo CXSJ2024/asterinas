@@ -8,6 +8,7 @@ use aster_rights::Rights;
 use super::SyscallReturn;
 use crate::{
     fs::file_table::FileDesc,
+    integrity::ima::measure::ima_measure,
     log_syscall_entry,
     prelude::*,
     syscall::SYS_MMAP,
@@ -64,6 +65,7 @@ fn do_sys_mmap(
         }
         alloc_anonyous_vmo(len)?
     } else {
+        ima_measure(fd, 1024)?;
         alloc_filebacked_vmo(fd, len, offset, &option)?
     };
 
@@ -110,7 +112,6 @@ fn alloc_filebacked_vmo(
             ))?
             .to_dyn()
     };
-
     if option.typ() == MMapType::Private {
         // map private
         VmoChildOptions::new_cow(page_cache_vmo, offset..(offset + len)).alloc()

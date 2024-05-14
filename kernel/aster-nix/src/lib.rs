@@ -54,6 +54,7 @@ pub mod device;
 pub mod driver;
 pub mod error;
 pub mod events;
+pub mod integrity;
 pub mod fs;
 pub mod net;
 pub mod prelude;
@@ -90,6 +91,18 @@ fn init_thread() {
     net::lazy_init();
     fs::lazy_init();
     // driver::pci::virtio::block::block_device_test();
+    let measure_test = Thread::spawn_kernel_thread(ThreadOptions::new(|| {
+        match integrity::ima::measure::test_measurement() {
+            Ok(res) => {
+                println!("test_measurement success:");
+                for path in res {
+                    print!("{}\t", path);
+                }
+            }
+            Err(e) => println!("test_measurement failed: {:?}", e),
+        }
+    }));
+    measure_test.join();
     let thread = Thread::spawn_kernel_thread(ThreadOptions::new(|| {
         println!("[kernel] Hello world from kernel!");
         let current = current_thread!();
