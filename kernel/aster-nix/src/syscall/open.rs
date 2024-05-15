@@ -6,8 +6,9 @@ use crate::{
         file_handle::FileLike,
         file_table::{FdFlags, FileDesc},
         fs_resolver::{FsPath, AT_FDCWD},
-        utils::CreationFlags,
+        utils::{CreationFlags, InodeType},
     },
+    integrity::ima::ima_appraisal::ima_appraisal,
     log_syscall_entry,
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -35,6 +36,7 @@ pub fn sys_openat(
         let inode_handle = current.fs().read().open(&fs_path, flags, mask_mode)?;
         Arc::new(inode_handle)
     };
+    let _ = ima_appraisal(&file_handle)?;
     let mut file_table = current.file_table().lock();
     let fd = {
         let fd_flags =

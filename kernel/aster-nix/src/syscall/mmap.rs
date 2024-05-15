@@ -8,7 +8,7 @@ use aster_rights::Rights;
 use super::SyscallReturn;
 use crate::{
     fs::file_table::FileDesc,
-    integrity::ima::measure::ima_measure,
+    integrity::ima::ima_appraisal::ima_appraisal_fd,
     log_syscall_entry,
     prelude::*,
     syscall::SYS_MMAP,
@@ -65,7 +65,7 @@ fn do_sys_mmap(
         }
         alloc_anonyous_vmo(len)?
     } else {
-        ima_measure(fd, 1024)?;
+        ima_appraisal_fd(fd)?;
         alloc_filebacked_vmo(fd, len, offset, &option)?
     };
 

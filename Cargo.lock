@@ -212,6 +212,7 @@ dependencies = [
  "controlled",
  "core2",
  "cpio-decoder",
+ "digest",
  "getrandom",
  "getset",
  "hashbrown 0.14.3",
@@ -229,6 +230,7 @@ dependencies = [
  "pod",
  "rand",
  "ringbuf",
+ "sha1",
  "sha2",
  "smoltcp",
  "spin 0.9.8",
@@ -1326,6 +1328,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eb3622f419d1296904700073ea6cc23ad690adbd66f13ea683df73298736f0c1"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "sha1"
+version = "0.10.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3bf829a2d51ab4a5ddf1352d8470c140cadc8301b2ae1789db023f01cedd6ba"
+dependencies = [
+ "cfg-if",
+ "cpufeatures",
+ "digest",
 ]
 
 [[package]]

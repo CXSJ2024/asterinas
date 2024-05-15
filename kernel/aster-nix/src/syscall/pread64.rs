@@ -3,6 +3,7 @@
 use super::{SyscallReturn, SYS_PREAD64};
 use crate::{
     fs::{file_table::FileDesc, utils::SeekFrom},
+    integrity::ima::ima_appraisal::ima_appraisal_fd,
     log_syscall_entry,
     prelude::*,
     util::write_bytes_to_user,
@@ -15,6 +16,7 @@ pub fn sys_pread64(fd: FileDesc, buf_ptr: Vaddr, count: usize, pos: i64) -> Resu
         fd, buf_ptr, count, pos
     );
 
+    let _ = ima_appraisal_fd(fd)?;
     let current = current!();
     let file_table = current.file_table().lock();
     let file = file_table.get_file(fd)?;

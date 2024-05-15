@@ -148,6 +148,7 @@ pub enum Errno {
     ERFKILL = 132, /* Operation not possible due to RF-kill */
 
     EHWPOISON = 133, /* Memory page has hardware error */
+    EIMA = 134,      /* IMA appraisal error */
 }
 
 /// error used in this crate

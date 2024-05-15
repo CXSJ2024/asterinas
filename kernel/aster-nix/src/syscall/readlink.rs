@@ -6,6 +6,7 @@ use crate::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
     },
+    integrity::ima::ima_appraisal::{ima_appraisal, ima_appraisal_fd},
     log_syscall_entry,
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -24,7 +25,6 @@ pub fn sys_readlinkat(
         "dirfd = {}, pathname = {:?}, usr_buf_addr = 0x{:x}, usr_buf_len = 0x{:x}",
         dirfd, pathname, usr_buf_addr, usr_buf_len
     );
-
     let current = current!();
     let dentry = {
         let pathname = pathname.to_string_lossy();
@@ -32,6 +32,7 @@ pub fn sys_readlinkat(
             return_errno_with_message!(Errno::ENOENT, "path is empty");
         }
         let fs_path = FsPath::new(dirfd, pathname.as_ref())?;
+        //TODO: fix me iterate each level link
         current.fs().read().lookup_no_follow(&fs_path)?
     };
     let linkpath = dentry.inode().read_link()?;

@@ -10,6 +10,7 @@ use crate::{
         fs_resolver::{FsPath, AT_FDCWD},
         utils::{Dentry, InodeType},
     },
+    integrity::ima::ima_appraisal::ima_appraisal_fd,
     log_syscall_entry,
     prelude::*,
     process::{
@@ -62,6 +63,7 @@ fn lookup_executable_file(
     filename: String,
     flags: OpenFlags,
 ) -> Result<Arc<Dentry>> {
+    let _ = ima_appraisal_fd(dfd)?;
     let current = current!();
     let fs_resolver = current.fs().read();
     let dentry = if flags.contains(OpenFlags::AT_EMPTY_PATH) && filename.is_empty() {

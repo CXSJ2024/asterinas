@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{SyscallReturn, SYS_READ};
-use crate::{fs::file_table::FileDesc, log_syscall_entry, prelude::*, util::write_bytes_to_user};
+use crate::{
+    fs::file_table::FileDesc, integrity::ima::ima_appraisal::ima_appraisal_fd, log_syscall_entry,
+    prelude::*, util::write_bytes_to_user,
+};
 
 pub fn sys_read(fd: FileDesc, user_buf_addr: Vaddr, buf_len: usize) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_READ);
@@ -9,6 +12,7 @@ pub fn sys_read(fd: FileDesc, user_buf_addr: Vaddr, buf_len: usize) -> Result<Sy
         "fd = {}, user_buf_ptr = 0x{:x}, buf_len = 0x{:x}",
         fd, user_buf_addr, buf_len
     );
+    let _ = ima_appraisal_fd(fd)?;
     let current = current!();
     let file_table = current.file_table().lock();
     let file = file_table.get_file(fd)?;
