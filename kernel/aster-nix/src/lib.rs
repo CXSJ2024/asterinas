@@ -66,6 +66,7 @@ pub mod time;
 mod util;
 pub(crate) mod vdso;
 pub mod vm;
+pub mod security;
 
 pub fn init() {
     driver::init();
@@ -90,6 +91,7 @@ fn init_thread() {
     aster_frame::trap::enable_local();
     net::lazy_init();
     fs::lazy_init();
+    security::security_init();
     // driver::pci::virtio::block::block_device_test();
     let thread = Thread::spawn_kernel_thread(ThreadOptions::new(|| {
         println!("[kernel] Hello world from kernel!");

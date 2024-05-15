@@ -47,6 +47,7 @@ pub mod timer;
 pub mod trap;
 pub mod user;
 pub mod vm;
+pub mod ima;
 
 #[cfg(feature = "intel_tdx")]
 use tdx_guest::init_tdx;

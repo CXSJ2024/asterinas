@@ -211,3 +211,11 @@ clean:
 	@cd docs && mdbook clean
 	@make --no-print-directory -C regression clean
 	@rm -f $(CARGO_OSDK)
+
+
+# # ima 
+# .PHONY: run_with_ima
+# run_with_ima: build
+# 	$(eval CARGO_OSDK_ARGS += --select ima)
+# 	@cargo osdk run $(CARGO_OSDK_ARGS)
+	

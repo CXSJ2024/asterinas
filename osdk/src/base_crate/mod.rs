@@ -15,7 +15,7 @@ use crate::util::get_cargo_metadata;
 pub fn new_base_crate(
     base_crate_path: impl AsRef<Path>,
     dep_crate_name: &str,
-    dep_crate_path: impl AsRef<Path>,
+    dep_crate_path: impl AsRef<Path>
 ) {
     let workspace_root = {
         let meta = get_cargo_metadata(None::<&str>, None::<&[&str]>).unwrap();
@@ -74,6 +74,7 @@ pub fn new_base_crate(
     // TODO: currently just x86_64 works; add support for other architectures
     // here when the framework is ready
     include_linker_script!(["x86_64.ld"]);
+
 
     // Overrite the main.rs file
     let main_rs = include_str!("main.rs.template");
