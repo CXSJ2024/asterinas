@@ -1,4 +1,5 @@
-use core::fmt::Display;
+use alloc::format;
+use core::{fmt::Display, str::FromStr};
 
 use digest::DynDigest;
 use sha1::Sha1;
@@ -6,7 +7,7 @@ use sha2::{Sha256, Sha384, Sha512};
 
 use crate::{fs::utils::Inode, prelude::*};
 
-#[derive(Eq, PartialEq, Default)]
+#[derive(Debug, Eq, PartialEq, Default, Clone)]
 pub enum IMAAlogrithm {
     #[default]
     SHA1,
@@ -14,6 +15,17 @@ pub enum IMAAlogrithm {
     SHA384,
     SHA512,
     MD5,
+}
+
+#[derive(Eq, Debug, PartialEq, Default)]
+pub struct IMAHash {
+    pub algo: IMAAlogrithm,
+    pub hash: VecU8,
+}
+
+#[derive(Eq, PartialEq, Default)]
+pub struct VecU8 {
+    data: Vec<u8>,
 }
 
 impl Display for IMAAlogrithm {
@@ -28,15 +40,65 @@ impl Display for IMAAlogrithm {
     }
 }
 
-#[derive(Eq, PartialEq, Default)]
-pub struct IMAHash {
-    pub algo: IMAAlogrithm,
-    pub hash: VecU8,
+impl FromStr for IMAAlogrithm {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "SHA1" => Ok(IMAAlogrithm::SHA1),
+            "SHA256" => Ok(IMAAlogrithm::SHA256),
+            "SHA384" => Ok(IMAAlogrithm::SHA384),
+            "SHA512" => Ok(IMAAlogrithm::SHA512),
+            "MD5" => Ok(IMAAlogrithm::MD5),
+            _ => Err(Error::new(Errno::ENAVAIL)),
+        }
+    }
 }
 
-#[derive(Eq, PartialEq, Default)]
-pub struct VecU8 {
-    data: Vec<u8>,
+impl Into<String> for IMAHash {
+    fn into(self) -> String {
+        format!("{}:{}", self.algo, self.hash)
+    }
+}
+
+impl FromStr for IMAHash {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self> {
+        let mut parts = s.split(':');
+        let algo = parts.next().unwrap().parse()?;
+        let hash = parts.next().unwrap().parse()?;
+        Ok(IMAHash { algo, hash })
+    }
+}
+
+impl From<String> for IMAHash {
+    fn from(s: String) -> Self {
+        let mut parts = s.split(':');
+        let algo = parts.next().unwrap().parse().unwrap();
+        let hash = parts.next().unwrap().parse().unwrap();
+        IMAHash { algo, hash }
+    }
+}
+
+impl Debug for VecU8 {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        for byte in self.data.iter() {
+            write!(f, "{:02x}", byte)?;
+        }
+        Ok(())
+    }
+}
+impl FromStr for VecU8 {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self> {
+        let mut data = Vec::new();
+        for i in 0..s.len() / 2 {
+            match u8::from_str_radix(&s[i * 2..i * 2 + 2], 16) {
+                Ok(byte) => data.push(byte),
+                Err(_) => return Err(Error::new(Errno::EINVAL)),
+            }
+        }
+        Ok(VecU8 { data })
+    }
 }
 
 impl Display for VecU8 {
@@ -69,7 +131,7 @@ pub fn cal_fd_hash(
     buf_len: usize,
     algo: Option<IMAAlogrithm>,
 ) -> Result<IMAHash> {
-    let algo = algo.unwrap_or(IMAAlogrithm::SHA256);
+    let algo = algo.unwrap_or(IMAAlogrithm::default());
     let mut hasher = select_hasher(&algo);
     let mut read_buf = vec![0u8; buf_len];
     let mut pos: usize = 0;

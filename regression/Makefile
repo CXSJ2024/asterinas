@@ -20,6 +20,7 @@ INITRAMFS_EMPTY_DIRS := \
 	$(INITRAMFS)/exfat
 INITRAMFS_ALL_DIRS := \
 	$(INITRAMFS)/etc \
+	$(INITRAMFS)/test \
 	$(INITRAMFS)/lib/x86_64-linux-gnu \
 	$(INITRAMFS)/lib64 \
 	$(INITRAMFS)/bin \
@@ -62,6 +63,11 @@ $(INITRAMFS)/etc:
 	@cp $(CUR_DIR)/etc/passwd $@
 	@cp $(CUR_DIR)/etc/group $@
 
+$(INITRAMFS)/test:
+	@mkdir -p $@
+	@cp $(CUR_DIR)/test/mmap_test $@
+	@cp $(CUR_DIR)/test/test_mmap.txt $@
+
 # Install busybox into /bin and /usr/bin.
 $(INITRAMFS)/bin:
 	@mkdir -p $@
@@ -80,6 +86,8 @@ $(INITRAMFS)/benchmark:
 	@cp /usr/local/benchmark/sysbench/bin/sysbench $@
 	@cp /usr/local/benchmark/iperf/bin/iperf3 $@
 	@cp /usr/local/benchmark/membench/membench $@
+
+
 
 # Make necessary directories.
 $(INITRAMFS_EMPTY_DIRS):

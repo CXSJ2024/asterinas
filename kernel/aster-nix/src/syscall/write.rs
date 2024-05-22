@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::SyscallReturn;
-use crate::{fs::file_table::FileDesc, prelude::*,
-    security::integrity::ima::ima_appraisal::ima_appraisal, util::read_bytes_from_user};
+use crate::{
+    fs::file_table::FileDesc, prelude::*,
+    security::integrity::ima::ima_appraisal::ima_remeasure_fd, util::read_bytes_from_user,
+};
 
 const STDOUT: u64 = 1;
 const STDERR: u64 = 2;
@@ -13,6 +15,7 @@ pub fn sys_write(fd: FileDesc, user_buf_ptr: Vaddr, user_buf_len: usize) -> Resu
         fd, user_buf_ptr, user_buf_len
     );
 
+    //let _ = ima_appraisal_fd(fd)?;
     let file = {
         let current = current!();
         let file_table = current.file_table().lock();
@@ -27,6 +30,6 @@ pub fn sys_write(fd: FileDesc, user_buf_ptr: Vaddr, user_buf_len: usize) -> Resu
     read_bytes_from_user(user_buf_ptr, &mut buffer)?;
     debug!("write content = {:?}", buffer);
     let write_len = file.write(&buffer)?;
-    //ima_appraisal(fd)?;
+    let _ = ima_remeasure_fd(fd)?;
     Ok(SyscallReturn::Return(write_len as _))
 }

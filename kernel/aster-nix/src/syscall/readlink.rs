@@ -7,7 +7,6 @@ use crate::{
         fs_resolver::{FsPath, AT_FDCWD},
     },
     prelude::*,
-    security::integrity::ima::ima_appraisal::{ima_appraisal, ima_appraisal_fd},
     syscall::constants::MAX_FILENAME_LEN,
     util::{read_cstring_from_user, write_bytes_to_user},
 };

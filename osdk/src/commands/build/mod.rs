@@ -66,8 +66,8 @@ pub fn create_base_and_cached_build(
     action: ActionChoice,
     rustflags: &[&str],
 ) -> Bundle {
-    let with_ima = config.manifest.kcmd_args.contains(&"ima".to_string());
-    let base_crate_path = osdk_target_directory.as_ref().join("base");
+    // let with_ima = config.manifest.kcmd_args.contains(&"ima".to_string());
+    let base_crate_path = osdk_output_directory.as_ref().join("base");
     new_base_crate(
         &base_crate_path,
         &get_current_crate_info().name,

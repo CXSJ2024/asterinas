@@ -1,55 +1,92 @@
-use alloc::format;
-
-use super::ima_hash::cal_fd_hash;
+const IMA_XATTR: &str = "security.ima";
+use super::{
+    super::super::xattr_ext2::setfattr::set_xattr,
+    ima_hash::{cal_fd_hash, IMAAlogrithm},
+};
 use crate::{
-    fs::{file_table::FileDesc, inode_handle::InodeHandle, utils::InodeType},
-    integrity::ima::ima_hash::{IMAAlogrithm, IMAHash},
+    fs::{
+        file_table::FileDesc,
+        inode_handle::InodeHandle,
+        path::Dentry,
+        utils::{Inode, InodeType},
+    },
     prelude::*,
-    security::xattr_ext2::setfattr::set_xattr,
+    security::{integrity::ima::ima_hash::IMAHash, xattr_ext2::getfattr::get_xattr},
 };
 
-pub fn ima_appraisal(fh: &InodeHandle) -> Result<()> {
-    let algo: Option<IMAAlogrithm> = None;
-    let dentry = fh.dentry();
-    let abs_path = &dentry.abs_path();
-    if dentry.type_() == InodeType::Dir {
+pub fn ima_appraisal_dentry(dentry: &Dentry) -> Result<()> {
+    if dentry.type_() != InodeType::File {
         return Ok(());
     }
-    let inode = dentry.inode();
-    let res = cal_fd_hash(inode, 1024, algo)?;
-    let foo = format! {"{}",res.hash};
-    let _ = set_xattr(abs_path, "security.ima", &foo)?;
-    //TODO: get xattr from inode
-    if res != IMAHash::default() {
-        return Err(Error::new(Errno::EIMA));
+    ima_appraisal_handle(dentry.inode(), &dentry.abs_path())
+}
+
+pub fn ima_appraisal_ih(fh: &InodeHandle) -> Result<()> {
+    let dentry = fh.dentry();
+    if dentry.type_() != InodeType::File {
+        return Ok(());
     }
-    Ok(())
+    ima_appraisal_handle(dentry.inode(), &dentry.abs_path())
 }
 
 pub fn ima_appraisal_fd(fd: FileDesc) -> Result<()> {
-    let algo: Option<IMAAlogrithm> = None;
     let current = current!();
     let fs = current.fs().read();
     let dentry = fs.lookup_from_fd(fd).unwrap();
-    if dentry.type_() == InodeType::Dir {
+    if dentry.type_() != InodeType::File {
         return Ok(());
     }
-    let inode = dentry.inode();
-    let res = cal_fd_hash(inode, 1024, algo)?;
-    //TODO: get xattr from inode
-    if res != IMAHash::default() {
-        return Err(Error::new(Errno::EIMA));
+    ima_appraisal_handle(dentry.inode(), &dentry.abs_path())
+}
+
+pub fn ima_remeasure_fd(fd: FileDesc) -> Result<()> {
+    let current = current!();
+    let fs = current.fs().read();
+    let dentry = fs.lookup_from_fd(fd).unwrap();
+    if dentry.type_() != InodeType::File {
+        return Ok(());
+    }
+    println!("remeasure file: {}", &dentry.abs_path());
+    ima_remeasure_handle(dentry.inode(), &dentry.abs_path())
+}
+
+fn ima_appraisal_handle(inode: &Arc<dyn Inode>, abs_path: &str) -> Result<()> {
+    match get_xattr(abs_path, IMA_XATTR) {
+        Ok(val) => {
+            let expect = IMAHash::from(val.value);
+            let res = cal_fd_hash(inode, 1024, Some(expect.algo.clone()))?;
+            if res != expect {
+                println!(
+                    "error!!!\nabs_path: {}\nexpected: {:?}\nactual: {:?}\n",
+                    abs_path, expect, res
+                );
+            }
+        }
+        Err(_) => {
+            println!("{}'s ima xattr not found, remeasure it", abs_path);
+
+            let tmp: String = IMAHash::default().into();
+            set_xattr(abs_path, IMA_XATTR, &tmp)?;
+            ima_remeasure_handle(inode, abs_path)?;
+        }
     }
     Ok(())
 }
 
-pub fn ima_aduit(fd: FileDesc) -> Result<()> {
+fn ima_remeasure_handle(inode: &Arc<dyn Inode>, abs_path: &str) -> Result<()> {
+    let hash = IMAHash::from(get_xattr(abs_path, IMA_XATTR).unwrap().value);
+    let res = cal_fd_hash(inode, 1024, Some(hash.algo))?;
+    let res_string: String = res.into();
+    let _ = set_xattr(abs_path, IMA_XATTR, &res_string)?;
+    Ok(())
+}
+
+fn ima_aduit(fd: FileDesc) -> Result<()> {
     let algo: Option<IMAAlogrithm> = None;
     let current = current!();
     let fs = current.fs().read();
     let dentry = fs.lookup_from_fd(fd).unwrap();
     let inode = dentry.inode();
-    let res = cal_fd_hash(inode, 1024, algo)?;
-    todo!("store xattr and update the measurement list");
+    todo!("save to tpm pcr");
     Ok(())
 }

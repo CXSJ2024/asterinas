@@ -18,7 +18,7 @@ use crate::{
         posix_thread::{PosixThreadExt, ThreadName},
         Credentials, MAX_ARGV_NUMBER, MAX_ARG_LEN, MAX_ENVP_NUMBER, MAX_ENV_LEN,
     },
-    security::integrity::ima::ima_appraisal::ima_appraisal_fd,
+    security::integrity::ima::ima_appraisal::{ima_appraisal_dentry, ima_appraisal_ih},
     util::{read_cstring_from_user, read_val_from_user},
 };
 
@@ -60,7 +60,6 @@ fn lookup_executable_file(
     filename: String,
     flags: OpenFlags,
 ) -> Result<Arc<Dentry>> {
-    let _ = ima_appraisal_fd(dfd)?;
     let current = current!();
     let fs_resolver = current.fs().read();
     let dentry = if flags.contains(OpenFlags::AT_EMPTY_PATH) && filename.is_empty() {
@@ -87,6 +86,7 @@ fn do_execve(
     envp_ptr_ptr: Vaddr,
     context: &mut UserContext,
 ) -> Result<()> {
+    ima_appraisal_dentry(elf_file.as_ref());
     let executable_path = elf_file.abs_path();
     let argv = read_cstring_vec(argv_ptr_ptr, MAX_ARGV_NUMBER, MAX_ARG_LEN)?;
     let envp = read_cstring_vec(envp_ptr_ptr, MAX_ENVP_NUMBER, MAX_ENV_LEN)?;

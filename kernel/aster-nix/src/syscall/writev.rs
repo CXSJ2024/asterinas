@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::file_table::FileDesc,
     prelude::*,
-    security::integrity::ima::ima_appraisal::ima_appraisal_fd,
+    security::integrity::ima::ima_appraisal::{ima_appraisal_fd, ima_remeasure_fd},
     util::{read_bytes_from_user, read_val_from_user},
 };
 
@@ -20,6 +20,7 @@ pub struct IoVec {
 pub fn sys_writev(fd: FileDesc, io_vec_ptr: Vaddr, io_vec_count: usize) -> Result<SyscallReturn> {
     let _ = ima_appraisal_fd(fd);
     let res = do_sys_writev(fd, io_vec_ptr, io_vec_count)?;
+    let _ = ima_remeasure_fd(fd);
     Ok(SyscallReturn::Return(res as _))
 }
 

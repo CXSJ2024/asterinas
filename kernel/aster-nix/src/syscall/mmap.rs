@@ -9,7 +9,7 @@ use super::SyscallReturn;
 use crate::{
     fs::file_table::FileDesc,
     prelude::*,
-    security::integrity::ima::ima_appraisal::ima_appraisal_fd,
+    security::integrity::ima::ima_appraisal::{ima_appraisal_dentry, ima_appraisal_fd},
     vm::{
         perms::VmPerms,
         vmo::{Vmo, VmoChildOptions, VmoOptions, VmoRightsOp},
@@ -64,7 +64,6 @@ fn do_sys_mmap(
         }
         alloc_anonyous_vmo(len)?
     } else {
-        ima_appraisal_fd(fd)?;
         alloc_filebacked_vmo(fd, len, offset, &option)?
     };
 
@@ -107,6 +106,7 @@ fn alloc_filebacked_vmo(
     let page_cache_vmo = {
         let fs_resolver = current.fs().read();
         let dentry = fs_resolver.lookup_from_fd(fd)?;
+        ima_appraisal_dentry(&dentry)?;
         let inode = dentry.inode();
         inode
             .page_cache()

@@ -9,7 +9,7 @@ use crate::{
         utils::{CreationFlags, InodeType},
     },
     prelude::*,
-    security::integrity::ima::ima_appraisal::ima_appraisal,
+    security::integrity::ima::ima_appraisal::ima_appraisal_ih,
     syscall::constants::MAX_FILENAME_LEN,
     util::read_cstring_from_user,
 };
@@ -34,7 +34,7 @@ pub fn sys_openat(
         let inode_handle = current.fs().read().open(&fs_path, flags, mask_mode)?;
         Arc::new(inode_handle)
     };
-    let _ = ima_appraisal(&file_handle)?;
+    let _ = ima_appraisal_ih(&file_handle)?;
     let mut file_table = current.file_table().lock();
     let fd = {
         let fd_flags =
