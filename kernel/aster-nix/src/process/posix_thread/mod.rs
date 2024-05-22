@@ -26,13 +26,11 @@ pub mod futex;
 mod name;
 mod posix_thread_ext;
 mod robust_list;
-mod timer;
 
 pub use builder::PosixThreadBuilder;
 pub use name::{ThreadName, MAX_THREAD_NAME_LEN};
 pub use posix_thread_ext::PosixThreadExt;
 pub use robust_list::RobustListHead;
-pub use timer::RealTimer;
 
 pub struct PosixThread {
     // Immutable part
@@ -52,14 +50,11 @@ pub struct PosixThread {
     /// Process credentials. At the kernel level, credentials are a per-thread attribute.
     credentials: Credentials,
 
-    /// The timer counts down in real (i.e., wall clock) time
-    real_timer: Mutex<RealTimer>,
-
     // Signal
     /// Blocked signals
     sig_mask: Mutex<SigMask>,
     /// Thread-directed sigqueue
-    sig_queues: Mutex<SigQueues>,
+    sig_queues: SigQueues,
     /// Signal handler ucontext address
     /// FIXME: This field may be removed. For glibc applications with RESTORER flag set, the sig_context is always equals with rsp.
     sig_context: Mutex<Option<Vaddr>>,
@@ -88,7 +83,7 @@ impl PosixThread {
     }
 
     pub fn has_pending_signal(&self) -> bool {
-        !self.sig_queues.lock().is_empty()
+        !self.sig_queues.is_empty()
     }
 
     /// Returns whether the signal is blocked by the thread.
@@ -146,16 +141,12 @@ impl PosixThread {
         return_errno_with_message!(Errno::EPERM, "sending signal to the thread is not allowed.");
     }
 
-    pub fn real_timer(&self) -> &Mutex<RealTimer> {
-        &self.real_timer
-    }
-
     pub(in crate::process) fn enqueue_signal(&self, signal: Box<dyn Signal>) {
-        self.sig_queues.lock().enqueue(signal);
+        self.sig_queues.enqueue(signal);
     }
 
     pub fn dequeue_signal(&self, mask: &SigMask) -> Option<Box<dyn Signal>> {
-        self.sig_queues.lock().dequeue(mask)
+        self.sig_queues.dequeue(mask)
     }
 
     pub fn register_sigqueue_observer(
@@ -163,11 +154,11 @@ impl PosixThread {
         observer: Weak<dyn Observer<SigEvents>>,
         filter: SigEventsFilter,
     ) {
-        self.sig_queues.lock().register_observer(observer, filter);
+        self.sig_queues.register_observer(observer, filter);
     }
 
     pub fn unregiser_sigqueue_observer(&self, observer: &Weak<dyn Observer<SigEvents>>) {
-        self.sig_queues.lock().unregister_observer(observer);
+        self.sig_queues.unregister_observer(observer);
     }
 
     pub fn sig_context(&self) -> &Mutex<Option<Vaddr>> {
@@ -193,7 +184,7 @@ impl PosixThread {
         let threads = process.threads().lock();
         threads
             .iter()
-            .filter(|thread| !thread.status().lock().is_exited())
+            .filter(|thread| !thread.status().is_exited())
             .count()
             == 0
     }
@@ -241,8 +232,6 @@ impl PosixThread {
             // Main thread are removed when the whole process is reaped.
             thread_table::remove_thread(tid);
         }
-
-        self.real_timer.lock().clear();
 
         if self.is_main_thread() || self.is_last_thread() {
             // exit current process.

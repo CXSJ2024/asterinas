@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_READLINKAT};
+use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
     },
-    log_syscall_entry,
     prelude::*,
     security::integrity::ima::ima_appraisal::{ima_appraisal, ima_appraisal_fd},
     syscall::constants::MAX_FILENAME_LEN,
@@ -15,23 +14,22 @@ use crate::{
 
 pub fn sys_readlinkat(
     dirfd: FileDesc,
-    pathname_addr: Vaddr,
+    path_addr: Vaddr,
     usr_buf_addr: Vaddr,
     usr_buf_len: usize,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_READLINKAT);
-    let pathname = read_cstring_from_user(pathname_addr, MAX_FILENAME_LEN)?;
+    let path = read_cstring_from_user(path_addr, MAX_FILENAME_LEN)?;
     debug!(
-        "dirfd = {}, pathname = {:?}, usr_buf_addr = 0x{:x}, usr_buf_len = 0x{:x}",
-        dirfd, pathname, usr_buf_addr, usr_buf_len
+        "dirfd = {}, path = {:?}, usr_buf_addr = 0x{:x}, usr_buf_len = 0x{:x}",
+        dirfd, path, usr_buf_addr, usr_buf_len
     );
     let current = current!();
     let dentry = {
-        let pathname = pathname.to_string_lossy();
-        if pathname.is_empty() {
+        let path = path.to_string_lossy();
+        if path.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "path is empty");
         }
-        let fs_path = FsPath::new(dirfd, pathname.as_ref())?;
+        let fs_path = FsPath::new(dirfd, path.as_ref())?;
         //TODO: fix me iterate each level link
         current.fs().read().lookup_no_follow(&fs_path)?
     };
@@ -43,9 +41,9 @@ pub fn sys_readlinkat(
 }
 
 pub fn sys_readlink(
-    pathname_addr: Vaddr,
+    path_addr: Vaddr,
     usr_buf_addr: Vaddr,
     usr_buf_len: usize,
 ) -> Result<SyscallReturn> {
-    self::sys_readlinkat(AT_FDCWD, pathname_addr, usr_buf_addr, usr_buf_len)
+    self::sys_readlinkat(AT_FDCWD, path_addr, usr_buf_addr, usr_buf_len)
 }

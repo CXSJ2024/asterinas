@@ -12,7 +12,7 @@ pub(crate) mod pci;
 pub mod qemu;
 #[cfg(feature = "intel_tdx")]
 pub(crate) mod tdx_guest;
-pub(crate) mod timer;
+pub mod timer;
 
 use core::{arch::x86_64::_rdtsc, sync::atomic::Ordering};
 
@@ -70,7 +70,7 @@ pub fn tsc_freq() -> u64 {
 
 /// Reads the current value of the processor’s time-stamp counter (TSC).
 pub fn read_tsc() -> u64 {
-    // Safety: It is safe to read a time-related counter.
+    // SAFETY: It is safe to read a time-related counter.
     unsafe { _rdtsc() }
 }
 

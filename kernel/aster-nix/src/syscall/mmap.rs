@@ -8,10 +8,8 @@ use aster_rights::Rights;
 use super::SyscallReturn;
 use crate::{
     fs::file_table::FileDesc,
-    log_syscall_entry,
     prelude::*,
     security::integrity::ima::ima_appraisal::ima_appraisal_fd,
-    syscall::SYS_MMAP,
     vm::{
         perms::VmPerms,
         vmo::{Vmo, VmoChildOptions, VmoOptions, VmoRightsOp},
@@ -26,7 +24,6 @@ pub fn sys_mmap(
     fd: u64,
     offset: u64,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_MMAP);
     let perms = VmPerms::from_posix_prot_bits(perms as u32).unwrap();
     let option = MMapOptions::try_from(flags as u32)?;
     let res = do_sys_mmap(
@@ -52,6 +49,8 @@ fn do_sys_mmap(
         "addr = 0x{:x}, len = 0x{:x}, perms = {:?}, option = {:?}, fd = {}, offset = 0x{:x}",
         addr, len, vm_perms, option, fd, offset
     );
+
+    check_option(&option)?;
 
     let len = len.align_up(PAGE_SIZE);
 
@@ -80,6 +79,11 @@ fn do_sys_mmap(
             // TODO: support MAP_32BIT. MAP_32BIT requires the map range to be below 2GB
             warn!("MAP_32BIT is not supported");
         }
+
+        if option.typ() == MMapType::Shared {
+            options = options.is_shared(true);
+        }
+
         options
     };
     let map_addr = vm_map_options.build()?;
@@ -120,6 +124,14 @@ fn alloc_filebacked_vmo(
         // FIXME: map shared vmo can exceed parent range, but slice child cannot
         VmoChildOptions::new_slice_rights(page_cache_vmo, offset..(offset + len)).alloc()
     }
+}
+
+fn check_option(option: &MMapOptions) -> Result<()> {
+    if option.typ() == MMapType::File {
+        return_errno_with_message!(Errno::EINVAL, "Invalid mmap type");
+    }
+
+    Ok(())
 }
 
 // Definition of MMap flags, conforming to the linux mmap interface:

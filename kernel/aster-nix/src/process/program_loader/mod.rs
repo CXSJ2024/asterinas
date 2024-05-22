@@ -11,7 +11,7 @@ use super::process_vm::ProcessVm;
 use crate::{
     fs::{
         fs_resolver::{FsPath, FsResolver, AT_FDCWD},
-        utils::Dentry,
+        path::Dentry,
     },
     prelude::*,
 };

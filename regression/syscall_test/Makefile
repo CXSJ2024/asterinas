@@ -11,11 +11,13 @@ TESTS ?= \
 	chown_test \
 	chroot_test \
 	epoll_test \
+	eventfd_test \
 	fsync_test \
 	getdents_test \
 	link_test \
 	lseek_test \
 	mkdir_test \
+	mmap_test \
 	open_create_test \
 	open_test \
 	pty_test \

@@ -15,8 +15,9 @@ use crate::{
     fs::{
         device::Device,
         file_handle::FileLike,
+        path::Dentry,
         utils::{
-            AccessMode, Dentry, DirentVisitor, InodeMode, InodeType, IoctlCmd, Metadata, SeekFrom,
+            AccessMode, DirentVisitor, InodeMode, InodeType, IoctlCmd, Metadata, SeekFrom,
             StatusFlags,
         },
     },

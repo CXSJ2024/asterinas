@@ -1,20 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_FTRUNCATE, SYS_TRUNCATE};
+use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
         utils::PATH_MAX,
     },
-    log_syscall_entry,
     prelude::*,
     process::ResourceType,
     util::read_cstring_from_user,
 };
 
 pub fn sys_ftruncate(fd: FileDesc, len: isize) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_FTRUNCATE);
     debug!("fd = {}, lentgh = {}", fd, len);
 
     check_length(len)?;
@@ -27,14 +25,13 @@ pub fn sys_ftruncate(fd: FileDesc, len: isize) -> Result<SyscallReturn> {
 }
 
 pub fn sys_truncate(path_ptr: Vaddr, len: isize) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_TRUNCATE);
     let path = read_cstring_from_user(path_ptr, PATH_MAX)?;
     debug!("path = {:?}, length = {}", path, len);
 
     check_length(len)?;
 
     let current = current!();
-    let dentry = {
+    let dir_dentry = {
         let path = path.to_string_lossy();
         if path.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "path is empty");
@@ -42,7 +39,7 @@ pub fn sys_truncate(path_ptr: Vaddr, len: isize) -> Result<SyscallReturn> {
         let fs_path = FsPath::new(AT_FDCWD, path.as_ref())?;
         current.fs().read().lookup(&fs_path)?
     };
-    dentry.resize(len as usize)?;
+    dir_dentry.resize(len as usize)?;
     Ok(SyscallReturn::Return(0))
 }
 

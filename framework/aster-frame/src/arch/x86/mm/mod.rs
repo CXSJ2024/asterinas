@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
+mod util;
+
 use alloc::fmt;
 
 use pod::Pod;
+pub use util::{fast_copy, fast_copy_nonoverlapping};
 use x86_64::{instructions::tlb, structures::paging::PhysFrame, VirtAddr};
 
 use crate::vm::{
@@ -61,7 +64,7 @@ pub fn tlb_flush(vaddr: Vaddr) {
 }
 
 pub fn tlb_flush_all_including_global() {
-    // Safety: updates to CR4 here only change the global-page bit, the side effect
+    // SAFETY: updates to CR4 here only change the global-page bit, the side effect
     // is only to invalidate the TLB, which doesn't affect the memory safety.
     unsafe {
         // To invalidate all entries, including global-page

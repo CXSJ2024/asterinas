@@ -36,9 +36,9 @@ impl<R: TRights> Vmo<TRightSet<R>> {
     pub fn new_slice_child(
         &self,
         range: Range<usize>,
-    ) -> Result<VmoChildOptions<TRightSet<R>, VmoSliceChild>> {
-        let dup_self = self.dup()?;
-        Ok(VmoChildOptions::new_slice(dup_self, range))
+    ) -> VmoChildOptions<TRightSet<R>, VmoSliceChild> {
+        let dup_self = self.dup();
+        VmoChildOptions::new_slice(dup_self, range)
     }
 
     /// Creates a new COW VMO through a set of VMO child options.
@@ -62,12 +62,9 @@ impl<R: TRights> Vmo<TRightSet<R>> {
     /// The child will be given the access rights of the parent
     /// plus the Write right.
     #[require(R > Dup)]
-    pub fn new_cow_child(
-        &self,
-        range: Range<usize>,
-    ) -> Result<VmoChildOptions<TRightSet<R>, VmoCowChild>> {
-        let dup_self = self.dup()?;
-        Ok(VmoChildOptions::new_cow(dup_self, range))
+    pub fn new_cow_child(&self, range: Range<usize>) -> VmoChildOptions<TRightSet<R>, VmoCowChild> {
+        let dup_self = self.dup();
+        VmoChildOptions::new_cow(dup_self, range)
     }
 
     /// commit a page at specific offset
@@ -87,7 +84,7 @@ impl<R: TRights> Vmo<TRightSet<R>> {
     /// The method requires the Write right.
     #[require(R > Write)]
     pub fn commit(&self, range: Range<usize>) -> Result<()> {
-        self.0.commit(range, false)?;
+        self.0.commit_and_operate(&range, |_| {}, false)?;
         Ok(())
     }
 
@@ -135,8 +132,8 @@ impl<R: TRights> Vmo<TRightSet<R>> {
     ///
     /// The method requires the Dup right.
     #[require(R > Dup)]
-    pub fn dup(&self) -> Result<Self> {
-        Ok(Vmo(self.0.clone(), self.1))
+    pub fn dup(&self) -> Self {
+        Vmo(self.0.clone(), self.1)
     }
 
     /// Strict the access rights.

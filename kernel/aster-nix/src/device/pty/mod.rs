@@ -4,7 +4,8 @@ use crate::{
     fs::{
         devpts::DevPts,
         fs_resolver::{FsPath, FsResolver},
-        utils::{Dentry, Inode, InodeMode, InodeType},
+        path::Dentry,
+        utils::{Inode, InodeMode, InodeType},
     },
     prelude::*,
 };
@@ -22,13 +23,15 @@ pub fn init() -> Result<()> {
 
     let dev = fs.lookup(&FsPath::try_from("/dev")?)?;
     // Create the "pts" directory and mount devpts on it.
-    let devpts = dev.create("pts", InodeType::Dir, InodeMode::from_bits_truncate(0o755))?;
-    devpts.mount(DevPts::new())?;
+    let devpts_dentry =
+        dev.new_fs_child("pts", InodeType::Dir, InodeMode::from_bits_truncate(0o755))?;
+    let devpts_mount_node = devpts_dentry.mount(DevPts::new())?;
+    let devpts = Dentry::new_fs_root(devpts_mount_node.clone());
 
     DEV_PTS.call_once(|| devpts);
 
     // Create the "ptmx" symlink.
-    let ptmx = dev.create(
+    let ptmx = dev.new_fs_child(
         "ptmx",
         InodeType::SymLink,
         InodeMode::from_bits_truncate(0o777),

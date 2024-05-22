@@ -5,11 +5,9 @@ use alloc::str;
 use super::{
     file_table::FileDesc,
     inode_handle::InodeHandle,
+    path::Dentry,
     rootfs::root_mount,
-    utils::{
-        AccessMode, CreationFlags, Dentry, InodeMode, InodeType, StatusFlags, PATH_MAX,
-        SYMLINKS_MAX,
-    },
+    utils::{AccessMode, CreationFlags, InodeMode, InodeType, StatusFlags, PATH_MAX, SYMLINKS_MAX},
 };
 use crate::prelude::*;
 
@@ -37,8 +35,8 @@ impl Default for FsResolver {
 impl FsResolver {
     pub fn new() -> Self {
         Self {
-            root: root_mount().root_dentry().clone(),
-            cwd: root_mount().root_dentry().clone(),
+            root: Dentry::new_fs_root(root_mount().clone()),
+            cwd: Dentry::new_fs_root(root_mount().clone()),
         }
     }
 
@@ -111,7 +109,7 @@ impl FsResolver {
                 if !dir_dentry.mode()?.is_writable() {
                     return_errno_with_message!(Errno::EACCES, "file cannot be created");
                 }
-                dir_dentry.create(&file_name, InodeType::File, inode_mode)?
+                dir_dentry.new_fs_child(&file_name, InodeType::File, inode_mode)?
             }
             Err(e) => return Err(e),
         };

@@ -1,16 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{collections::VecDeque, sync::Arc};
-use core::{
-    sync::atomic::{AtomicBool, AtomicU32, Ordering},
-    time::Duration,
-};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use super::SpinLock;
-use crate::{
-    arch::timer::{add_timeout_list, TIMER_FREQ},
-    task::{add_task, current_task, schedule, Task, TaskStatus},
-};
+use crate::task::{add_task, current_task, schedule, Task, TaskStatus};
 
 /// A wait queue.
 ///
@@ -35,75 +29,54 @@ impl WaitQueue {
     /// Wait until some condition becomes true.
     ///
     /// This method takes a closure that tests a user-given condition.
-    /// The method only returns if the condition returns Some(_).
-    /// A waker thread should first make the condition Some(_), then invoke the
+    /// The method only returns if the condition returns `Some(_)`.
+    /// A waker thread should first make the condition `Some(_)`, then invoke the
     /// `wake`-family method. This ordering is important to ensure that waiter
-    /// threads do not lose any wakeup notifiations.
+    /// threads do not lose any wakeup notifications.
     ///
     /// By taking a condition closure, his wait-wakeup mechanism becomes
     /// more efficient and robust.
-    pub fn wait_until<F, R>(&self, cond: F) -> R
-    where
-        F: FnMut() -> Option<R>,
-    {
-        self.do_wait(cond, None).unwrap()
-    }
-
-    /// Wait until some condition returns Some(_), or a given timeout is reached. If
-    /// the condition does not becomes Some(_) before the timeout is reached, the
-    /// function will return None.
-    pub fn wait_until_or_timeout<F, R>(&self, cond: F, timeout: &Duration) -> Option<R>
-    where
-        F: FnMut() -> Option<R>,
-    {
-        self.do_wait(cond, Some(timeout))
-    }
-
-    fn do_wait<F, R>(&self, mut cond: F, timeout: Option<&Duration>) -> Option<R>
+    pub fn wait_until<F, R>(&self, mut cond: F) -> R
     where
         F: FnMut() -> Option<R>,
     {
         if let Some(res) = cond() {
-            return Some(res);
+            return res;
         }
 
-        let (waiter, waker) = Waiter::new_pair();
+        let (waiter, _) = Waiter::new_pair();
 
-        let timer_callback = timeout.map(|timeout| {
-            let remaining_ticks = {
-                // FIXME: We currently require 1000 to be a multiple of TIMER_FREQ, but
-                // this may not hold true in the future, because TIMER_FREQ can be greater
-                // than 1000. Then, the code need to be refactored.
-                const_assert!(1000 % TIMER_FREQ == 0);
+        self.wait_until_or_cancelled(cond, waiter, || false)
+            .unwrap()
+    }
 
-                let ms_per_tick = 1000 / TIMER_FREQ;
-
-                // The ticks should be equal to or greater than timeout
-                (timeout.as_millis() as u64 + ms_per_tick - 1) / ms_per_tick
-            };
-
-            add_timeout_list(remaining_ticks, waker.clone(), |timer_call_back| {
-                let waker = timer_call_back.data().downcast_ref::<Arc<Waker>>().unwrap();
-                waker.wake_up();
-            })
-        });
+    /// Wait until some condition becomes true or the cancel condition becomes true.
+    ///
+    /// This method will return `Some(_)` if the condition returns `Some(_)`, and will return
+    /// the condition test result regardless what it is when the cancel condition becomes true.
+    #[doc(hidden)]
+    pub fn wait_until_or_cancelled<F, R, FCancel>(
+        &self,
+        mut cond: F,
+        waiter: Waiter,
+        cancel_cond: FCancel,
+    ) -> Option<R>
+    where
+        F: FnMut() -> Option<R>,
+        FCancel: Fn() -> bool,
+    {
+        let waker = waiter.waker();
 
         loop {
             // Enqueue the waker before checking `cond()` to avoid races
             self.enqueue(waker.clone());
 
             if let Some(res) = cond() {
-                if let Some(timer_callback) = timer_callback {
-                    timer_callback.cancel();
-                }
-
                 return Some(res);
             };
 
-            if let Some(ref timer_callback) = timer_callback
-                && timer_callback.is_expired()
-            {
-                // Drop the waiter and check again to avoid missing a wake event
+            if cancel_cond() {
+                // Drop the waiter and check again to avoid missing a wake event.
                 drop(waiter);
                 return cond();
             }
@@ -154,6 +127,7 @@ impl WaitQueue {
         }
     }
 
+    /// Return whether the current wait queue is empty.
     pub fn is_empty(&self) -> bool {
         self.num_wakers.load(Ordering::Acquire) == 0
     }
@@ -170,7 +144,7 @@ impl WaitQueue {
 ///
 /// By definition, a waiter belongs to the current thread, so it cannot be sent to another thread
 /// and its reference cannot be shared between threads.
-struct Waiter {
+pub struct Waiter {
     waker: Arc<Waker>,
 }
 
@@ -181,7 +155,7 @@ impl !Sync for Waiter {}
 ///
 /// A waker can be created by calling [`Waiter::new`]. This method creates an `Arc<Waker>` that can
 /// be used across different threads.
-struct Waker {
+pub struct Waker {
     has_woken: AtomicBool,
     task: Arc<Task>,
 }
@@ -207,6 +181,11 @@ impl Waiter {
     /// before). Otherwise, it puts the current thread to sleep until the waiter is woken up.
     pub fn wait(&self) {
         self.waker.do_wait();
+    }
+
+    /// Gets the associated [`Waker`] of the current waiter.
+    pub fn waker(&self) -> Arc<Waker> {
+        self.waker.clone()
     }
 }
 

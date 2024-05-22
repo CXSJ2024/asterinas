@@ -2,28 +2,28 @@
 
 use core::time::Duration;
 
-use super::{SyscallReturn, SYS_ALARM};
-use crate::{log_syscall_entry, prelude::*, process::posix_thread::PosixThreadExt};
+use super::SyscallReturn;
+use crate::prelude::*;
 
 pub fn sys_alarm(seconds: u32) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_ALARM);
     debug!("seconds = {}", seconds);
 
-    let current_thread = current_thread!();
-    let mut real_timer = {
-        let posix_thread = current_thread.as_posix_thread().unwrap();
-        posix_thread.real_timer().lock()
-    };
+    let current = current!();
+    let alarm_timer = current.alarm_timer();
 
-    let remaining_secs = real_timer.remain().as_secs();
+    let remaining = alarm_timer.remain();
+    let mut remaining_secs = remaining.as_secs();
+    if remaining.subsec_nanos() > 0 {
+        remaining_secs += 1;
+    }
 
     if seconds == 0 {
         // Clear previous timer
-        real_timer.clear();
+        alarm_timer.cancel();
         return Ok(SyscallReturn::Return(remaining_secs as _));
     }
 
-    real_timer.set(Duration::from_secs(seconds as u64))?;
+    alarm_timer.set_timeout(Duration::from_secs(seconds as u64));
 
     Ok(SyscallReturn::Return(remaining_secs as _))
 }

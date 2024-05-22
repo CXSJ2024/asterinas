@@ -11,7 +11,8 @@ use crate::{
     fs::{
         file_handle::FileLike,
         fs_resolver::FsPath,
-        utils::{Dentry, InodeType, StatusFlags},
+        path::Dentry,
+        utils::{InodeType, StatusFlags},
     },
     net::socket::{
         unix::{addr::UnixSocketAddrBound, UnixSocketAddr},

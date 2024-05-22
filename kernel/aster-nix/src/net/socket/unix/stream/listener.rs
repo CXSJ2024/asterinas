@@ -7,10 +7,7 @@ use keyable_arc::KeyableWeak;
 use super::{connected::Connected, endpoint::Endpoint, UnixStreamSocket};
 use crate::{
     events::IoEvents,
-    fs::{
-        file_handle::FileLike,
-        utils::{Dentry, Inode},
-    },
+    fs::{file_handle::FileLike, path::Dentry, utils::Inode},
     net::socket::{
         unix::addr::{UnixSocketAddr, UnixSocketAddrBound},
         SocketAddr,

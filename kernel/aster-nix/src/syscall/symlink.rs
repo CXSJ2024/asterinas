@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_SYMLINKAT};
+use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
         utils::{InodeMode, InodeType},
     },
-    log_syscall_entry,
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
     util::read_cstring_from_user,
@@ -18,7 +17,6 @@ pub fn sys_symlinkat(
     dirfd: FileDesc,
     linkpath_addr: Vaddr,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_SYMLINKAT);
     let target = read_cstring_from_user(target_addr, MAX_FILENAME_LEN)?;
     let linkpath = read_cstring_from_user(linkpath_addr, MAX_FILENAME_LEN)?;
     debug!(
@@ -43,7 +41,7 @@ pub fn sys_symlinkat(
         current.fs().read().lookup_dir_and_base_name(&fs_path)?
     };
 
-    let new_dentry = dir_dentry.create(
+    let new_dentry = dir_dentry.new_fs_child(
         &link_name,
         InodeType::SymLink,
         InodeMode::from_bits_truncate(0o777),

@@ -7,9 +7,10 @@ use spin::Once;
 
 use super::{
     fs_resolver::{FsPath, FsResolver},
+    path::MountNode,
     procfs::ProcFS,
     ramfs::RamFS,
-    utils::{FileSystem, InodeMode, InodeType, MountNode},
+    utils::{FileSystem, InodeMode, InodeType},
 };
 use crate::prelude::*;
 
@@ -54,14 +55,14 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
         let mode = InodeMode::from_bits_truncate(metadata.permission_mode());
         match metadata.file_type() {
             FileType::File => {
-                let dentry = parent.create(name, InodeType::File, mode)?;
+                let dentry = parent.new_fs_child(name, InodeType::File, mode)?;
                 entry.read_all(dentry.inode().writer(0))?;
             }
             FileType::Dir => {
-                let _ = parent.create(name, InodeType::Dir, mode)?;
+                let _ = parent.new_fs_child(name, InodeType::Dir, mode)?;
             }
             FileType::Link => {
-                let dentry = parent.create(name, InodeType::SymLink, mode)?;
+                let dentry = parent.new_fs_child(name, InodeType::SymLink, mode)?;
                 let link_content = {
                     let mut link_data: Vec<u8> = Vec::new();
                     entry.read_all(&mut link_data)?;

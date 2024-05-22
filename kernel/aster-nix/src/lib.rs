@@ -49,7 +49,9 @@ extern crate ktest;
 #[macro_use]
 extern crate getset;
 
+pub mod arch;
 pub mod console;
+pub mod cpu;
 pub mod device;
 pub mod driver;
 pub mod error;
@@ -68,6 +70,7 @@ pub(crate) mod vdso;
 pub mod vm;
 
 pub fn init() {
+    util::random::init();
     driver::init();
     time::init();
     net::init();
@@ -114,7 +117,6 @@ fn init_thread() {
         karg.get_initproc_envp().to_vec(),
     )
     .expect("Run init process failed.");
-
     // Wait till initproc become zombie.
     while !initproc.is_zombie() {
         // We don't have preemptive scheduler now.

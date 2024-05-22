@@ -13,10 +13,10 @@ pub mod sig_queues;
 mod sig_stack;
 pub mod signals;
 
-use core::mem;
+use core::{mem, sync::atomic::Ordering};
 
 use align_ext::AlignExt;
-use aster_frame::{cpu::UserContext, task::Task};
+use aster_frame::{cpu::UserContext, task::Task, user::UserContextApi};
 use c_types::{siginfo_t, ucontext_t};
 pub use events::{SigEvents, SigEventsFilter};
 pub use pauser::Pauser;
@@ -30,9 +30,14 @@ use super::posix_thread::{PosixThread, PosixThreadExt};
 use crate::{
     prelude::*,
     process::{do_exit_group, TermStatus},
-    thread::Thread,
+    thread::{status::ThreadStatus, Thread},
     util::{write_bytes_to_user, write_val_to_user},
 };
+
+pub trait SignalContext {
+    /// Set signal handler arguments
+    fn set_arguments(&mut self, sig_num: SigNum, siginfo_addr: usize, ucontext_addr: usize);
+}
 
 // TODO: This interface of this method is error prone.
 // The method takes an argument for the current thread to optimize its efficiency.
@@ -91,18 +96,20 @@ pub fn handle_pending_signal(
                 }
                 SigDefaultAction::Ign => {}
                 SigDefaultAction::Stop => {
-                    let mut status = current_thread.status().lock();
-                    if status.is_running() {
-                        status.set_stopped();
-                    }
-                    drop(status);
+                    let _ = current_thread.atomic_status().compare_exchange(
+                        ThreadStatus::Running,
+                        ThreadStatus::Stopped,
+                        Ordering::AcqRel,
+                        Ordering::Relaxed,
+                    );
                 }
                 SigDefaultAction::Cont => {
-                    let mut status = current_thread.status().lock();
-                    if status.is_stopped() {
-                        status.set_running();
-                    }
-                    drop(status);
+                    let _ = current_thread.atomic_status().compare_exchange(
+                        ThreadStatus::Stopped,
+                        ThreadStatus::Running,
+                        Ordering::AcqRel,
+                        Ordering::Relaxed,
+                    );
                 }
             }
         }
@@ -143,7 +150,7 @@ pub fn handle_user_signal(
         sp as u64
     } else {
         // just use user stack
-        context.rsp() as u64
+        context.stack_pointer() as u64
     };
 
     // To avoid corrupting signal stack, we minus 128 first.
@@ -192,17 +199,15 @@ pub fn handle_user_signal(
         write_bytes_to_user(stack_pointer as Vaddr, TRAMPOLINE)?;
         stack_pointer = write_u64_to_user_stack(stack_pointer, trampoline_rip)?;
     }
+
     // 4. Set correct register values
-    context.set_rip(handler_addr as _);
-    context.set_rsp(stack_pointer as usize);
+    context.set_instruction_pointer(handler_addr as _);
+    context.set_stack_pointer(stack_pointer as usize);
     // parameters of signal handler
-    context.set_rdi(sig_num.as_u8() as usize); // signal number
     if flags.contains(SigActionFlags::SA_SIGINFO) {
-        context.set_rsi(siginfo_addr as usize); // siginfo_t* siginfo
-        context.set_rdx(ucontext_addr as usize); // void* ctx
+        context.set_arguments(sig_num, siginfo_addr as usize, ucontext_addr as usize);
     } else {
-        context.set_rsi(0);
-        context.set_rdx(0);
+        context.set_arguments(sig_num, 0, 0);
     }
 
     Ok(())

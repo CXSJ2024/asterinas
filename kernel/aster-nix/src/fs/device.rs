@@ -4,7 +4,8 @@ use super::inode_handle::FileIo;
 use crate::{
     fs::{
         fs_resolver::{FsPath, FsResolver},
-        utils::{Dentry, InodeMode, InodeType},
+        path::Dentry,
+        utils::{InodeMode, InodeType},
     },
     prelude::*,
 };
@@ -122,7 +123,7 @@ pub fn add_node(device: Arc<dyn Device>, path: &str) -> Result<Arc<Dentry>> {
                     )?;
                 } else {
                     // Mkdir parent path
-                    dentry = dentry.create(
+                    dentry = dentry.new_fs_child(
                         next_name,
                         InodeType::Dir,
                         InodeMode::from_bits_truncate(0o755),

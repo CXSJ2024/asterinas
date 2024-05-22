@@ -513,7 +513,7 @@ mod test {
     #[ktest]
     fn slice_child() {
         let parent = VmoOptions::<Full>::new(2 * PAGE_SIZE).alloc().unwrap();
-        let parent_dup = parent.dup().unwrap();
+        let parent_dup = parent.dup();
         let slice_child = VmoChildOptions::new_slice(parent_dup, 0..PAGE_SIZE)
             .alloc()
             .unwrap();
@@ -530,7 +530,7 @@ mod test {
         let parent = VmoOptions::<Full>::new(2 * PAGE_SIZE).alloc().unwrap();
         parent.write_val(1, &42u8).unwrap();
         parent.write_val(2, &16u8).unwrap();
-        let parent_dup = parent.dup().unwrap();
+        let parent_dup = parent.dup();
         let cow_child = VmoChildOptions::new_cow(parent_dup, 0..10 * PAGE_SIZE)
             .alloc()
             .unwrap();
@@ -570,5 +570,18 @@ mod test {
         vmo.write_val(PAGE_SIZE + 20, &123u8).unwrap();
         vmo.resize(PAGE_SIZE).unwrap();
         assert_eq!(vmo.read_val::<u8>(10).unwrap(), 42);
+    }
+
+    #[ktest]
+    fn resize_cow() {
+        let vmo = VmoOptions::<Full>::new(10 * PAGE_SIZE)
+            .flags(VmoFlags::RESIZABLE)
+            .alloc()
+            .unwrap();
+
+        let cow_child = VmoChildOptions::new_cow(vmo, 0..PAGE_SIZE).alloc().unwrap();
+
+        cow_child.resize(2 * PAGE_SIZE).unwrap();
+        assert_eq!(cow_child.size(), 2 * PAGE_SIZE);
     }
 }

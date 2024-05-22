@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_OPENAT};
+use super::SyscallReturn;
 use crate::{
     fs::{
         file_handle::FileLike,
@@ -8,7 +8,6 @@ use crate::{
         fs_resolver::{FsPath, AT_FDCWD},
         utils::{CreationFlags, InodeType},
     },
-    log_syscall_entry,
     prelude::*,
     security::integrity::ima::ima_appraisal::ima_appraisal,
     syscall::constants::MAX_FILENAME_LEN,
@@ -17,21 +16,20 @@ use crate::{
 
 pub fn sys_openat(
     dirfd: FileDesc,
-    pathname_addr: Vaddr,
+    path_addr: Vaddr,
     flags: u32,
     mode: u16,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_OPENAT);
-    let pathname = read_cstring_from_user(pathname_addr, MAX_FILENAME_LEN)?;
+    let path = read_cstring_from_user(path_addr, MAX_FILENAME_LEN)?;
     debug!(
-        "dirfd = {}, pathname = {:?}, flags = {}, mode = {}",
-        dirfd, pathname, flags, mode
+        "dirfd = {}, path = {:?}, flags = {}, mode = {}",
+        dirfd, path, flags, mode
     );
 
     let current = current!();
     let file_handle = {
-        let pathname = pathname.to_string_lossy();
-        let fs_path = FsPath::new(dirfd, pathname.as_ref())?;
+        let path = path.to_string_lossy();
+        let fs_path = FsPath::new(dirfd, path.as_ref())?;
         let mask_mode = mode & !current.umask().read().get();
         let inode_handle = current.fs().read().open(&fs_path, flags, mask_mode)?;
         Arc::new(inode_handle)
@@ -50,8 +48,8 @@ pub fn sys_openat(
     Ok(SyscallReturn::Return(fd as _))
 }
 
-pub fn sys_open(pathname_addr: Vaddr, flags: u32, mode: u16) -> Result<SyscallReturn> {
-    self::sys_openat(AT_FDCWD, pathname_addr, flags, mode)
+pub fn sys_open(path_addr: Vaddr, flags: u32, mode: u16) -> Result<SyscallReturn> {
+    self::sys_openat(AT_FDCWD, path_addr, flags, mode)
 }
 
 /// File for output busybox ash log.

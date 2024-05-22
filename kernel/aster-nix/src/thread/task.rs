@@ -8,7 +8,7 @@ use aster_frame::{
 
 use super::Thread;
 use crate::{
-    prelude::*, process::signal::handle_pending_signal, syscall::handle_syscall,
+    cpu::LinuxAbi, prelude::*, process::signal::handle_pending_signal, syscall::handle_syscall,
     thread::exception::handle_exception,
 };
 
@@ -40,16 +40,16 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>
             // handle user event:
             handle_user_event(user_event, context);
             // should be do this comparison before handle signal?
-            if current_thread.status().lock().is_exited() {
+            if current_thread.status().is_exited() {
                 break;
             }
             handle_pending_signal(context, &current_thread).unwrap();
-            if current_thread.status().lock().is_exited() {
+            if current_thread.status().is_exited() {
                 debug!("exit due to signal");
                 break;
             }
             // If current is suspended, wait for a signal to wake up self
-            while current_thread.status().lock().is_stopped() {
+            while current_thread.status().is_stopped() {
                 Thread::yield_now();
                 debug!("{} is suspended.", current_thread.tid());
                 handle_pending_signal(context, &current_thread).unwrap();

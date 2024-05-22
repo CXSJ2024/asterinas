@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::cpu::UserContext;
+use aster_frame::{cpu::UserContext, user::UserContextApi};
 use aster_rights::WriteOp;
 
 use super::{constants::*, SyscallReturn};
 use crate::{
+    cpu::LinuxAbi,
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
-        utils::{Dentry, InodeType},
+        path::Dentry,
+        utils::InodeType,
     },
-    log_syscall_entry,
     prelude::*,
     process::{
         check_executable_file, credentials_mut, load_program_to_vm,
@@ -18,7 +19,6 @@ use crate::{
         Credentials, MAX_ARGV_NUMBER, MAX_ARG_LEN, MAX_ENVP_NUMBER, MAX_ENV_LEN,
     },
     security::integrity::ima::ima_appraisal::ima_appraisal_fd,
-    syscall::{SYS_EXECVE, SYS_EXECVEAT},
     util::{read_cstring_from_user, read_val_from_user},
 };
 
@@ -28,7 +28,6 @@ pub fn sys_execve(
     envp_ptr_ptr: Vaddr,
     context: &mut UserContext,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_EXECVE);
     let elf_file = {
         let executable_path = read_filename(filename_ptr)?;
         lookup_executable_file(AT_FDCWD, executable_path, OpenFlags::empty())?
@@ -46,8 +45,6 @@ pub fn sys_execveat(
     flags: u32,
     context: &mut UserContext,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_EXECVEAT);
-
     let elf_file = {
         let flags = OpenFlags::from_bits_truncate(flags);
         let filename = read_filename(filename_ptr)?;
@@ -133,13 +130,13 @@ fn do_execve(
     // set cpu context to default
     let default_content = UserContext::default();
     *context.general_regs_mut() = *default_content.general_regs();
-    context.set_fsbase(default_content.fsbase());
+    context.set_tls_pointer(default_content.tls_pointer());
     *context.fp_regs_mut() = *default_content.fp_regs();
     // set new entry point
-    context.set_rip(elf_load_info.entry_point() as _);
+    context.set_instruction_pointer(elf_load_info.entry_point() as _);
     debug!("entry_point: 0x{:x}", elf_load_info.entry_point());
     // set new user stack top
-    context.set_rsp(elf_load_info.user_stack_top() as _);
+    context.set_stack_pointer(elf_load_info.user_stack_top() as _);
     debug!("user stack top: 0x{:x}", elf_load_info.user_stack_top());
     Ok(())
 }

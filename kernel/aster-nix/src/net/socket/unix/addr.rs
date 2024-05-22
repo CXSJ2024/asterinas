@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::{fs::utils::Dentry, net::socket::util::socket_addr::SocketAddr, prelude::*};
+use crate::{fs::path::Dentry, net::socket::util::socket_addr::SocketAddr, prelude::*};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UnixSocketAddr {

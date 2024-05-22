@@ -7,7 +7,8 @@ use crate::{
     events::IoEvents,
     fs::{
         fs_resolver::{split_path, FsPath},
-        utils::{Dentry, InodeMode, InodeType},
+        path::Dentry,
+        utils::{InodeMode, InodeType},
     },
     net::socket::unix::addr::{UnixSocketAddr, UnixSocketAddrBound},
     prelude::*,
@@ -95,7 +96,7 @@ fn create_socket_file(path: &str) -> Result<Arc<Dentry>> {
         let parent_path = FsPath::try_from(parent_pathname)?;
         fs.lookup(&parent_path)?
     };
-    let dentry = parent.create(
+    let dentry = parent.new_fs_child(
         file_name,
         InodeType::Socket,
         InodeMode::S_IRUSR | InodeMode::S_IWUSR,
