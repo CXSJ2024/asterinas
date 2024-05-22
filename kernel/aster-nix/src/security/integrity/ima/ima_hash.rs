@@ -30,8 +30,28 @@ impl Display for IMAAlogrithm {
 
 #[derive(Eq, PartialEq, Default)]
 pub struct IMAHash {
-    algo: IMAAlogrithm,
-    hash: Vec<u8>,
+    pub algo: IMAAlogrithm,
+    pub hash: VecU8,
+}
+
+#[derive(Eq, PartialEq, Default)]
+pub struct VecU8 {
+    data: Vec<u8>,
+}
+
+impl Display for VecU8 {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        for byte in self.data.iter() {
+            write!(f, "{:02x}", byte)?;
+        }
+        Ok(())
+    }
+}
+
+impl VecU8 {
+    pub fn new(data: Vec<u8>) -> Self {
+        VecU8 { data }
+    }
 }
 
 pub fn select_hasher(algo: &IMAAlogrithm) -> Box<dyn DynDigest> {
@@ -63,6 +83,6 @@ pub fn cal_fd_hash(
     }
     Ok(IMAHash {
         algo,
-        hash: hasher.finalize().to_vec(),
+        hash: VecU8::new(hasher.finalize().to_vec()),
     })
 }

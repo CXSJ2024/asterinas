@@ -8,9 +8,9 @@ use crate::{
         fs_resolver::{FsPath, AT_FDCWD},
         utils::{CreationFlags, InodeType},
     },
-    integrity::ima::ima_appraisal::ima_appraisal,
     log_syscall_entry,
     prelude::*,
+    security::integrity::ima::ima_appraisal::ima_appraisal,
     syscall::constants::MAX_FILENAME_LEN,
     util::read_cstring_from_user,
 };

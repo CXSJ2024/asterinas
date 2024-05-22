@@ -10,7 +10,6 @@ use crate::{
         fs_resolver::{FsPath, AT_FDCWD},
         utils::{Dentry, InodeType},
     },
-    integrity::ima::ima_appraisal::ima_appraisal_fd,
     log_syscall_entry,
     prelude::*,
     process::{
@@ -18,6 +17,7 @@ use crate::{
         posix_thread::{PosixThreadExt, ThreadName},
         Credentials, MAX_ARGV_NUMBER, MAX_ARG_LEN, MAX_ENVP_NUMBER, MAX_ENV_LEN,
     },
+    security::integrity::ima::ima_appraisal::ima_appraisal_fd,
     syscall::{SYS_EXECVE, SYS_EXECVEAT},
     util::{read_cstring_from_user, read_val_from_user},
 };

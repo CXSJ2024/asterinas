@@ -55,18 +55,17 @@ pub mod driver;
 pub mod error;
 pub mod events;
 pub mod fs;
-pub mod integrity;
 pub mod net;
 pub mod prelude;
 mod process;
 mod sched;
+pub mod security;
 pub mod syscall;
 pub mod thread;
 pub mod time;
 mod util;
 pub(crate) mod vdso;
 pub mod vm;
-pub mod security;
 
 pub fn init() {
     driver::init();

@@ -8,9 +8,9 @@ use aster_rights::Rights;
 use super::SyscallReturn;
 use crate::{
     fs::file_table::FileDesc,
-    integrity::ima::ima_appraisal::ima_appraisal_fd,
     log_syscall_entry,
     prelude::*,
+    security::integrity::ima::ima_appraisal::ima_appraisal_fd,
     syscall::SYS_MMAP,
     vm::{
         perms::VmPerms,

@@ -2,8 +2,9 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::FileDesc, integrity::ima::ima_appraisal::ima_appraisal, log_syscall_entry,
-    prelude::*, syscall::SYS_WRITE, util::read_bytes_from_user,
+    fs::file_table::FileDesc, log_syscall_entry, prelude::*,
+    security::integrity::ima::ima_appraisal::ima_appraisal, syscall::SYS_WRITE,
+    util::read_bytes_from_user,
 };
 
 const STDOUT: u64 = 1;
