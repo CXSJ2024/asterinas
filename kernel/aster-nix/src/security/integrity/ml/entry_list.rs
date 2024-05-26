@@ -2,12 +2,20 @@ use alloc::{collections::BTreeMap, vec::Vec};
 
 use spin::{Mutex, MutexGuard};
 
-use super::{
-    entry::MeasurementEntry,
-    tpm::{self, PcrOp, TPM},
-};
+use aster_frame::{arch::console::print, ima::tpm::{PcrValue, DEFAULT_PCR_REGISTER, PCR_BITSIZE}};
+
+
+use super::entry::MeasurementEntry;
+
+// use ram tpm
+use aster_frame::ima::tpm::{ram_tpm::RAMTpm,default_extended_alg,PcrOp};
+static PCR_DEVICE: Mutex<RAMTpm> = Mutex::new(RAMTpm {});
+
+
 
 static IMA_MEASUREMENT_LIST: Mutex<MeasurementList> = Mutex::new(MeasurementList::default());
+
+
 
 pub struct MeasurementList {
     pub version: u8,                        // magic value = 1
@@ -16,6 +24,17 @@ pub struct MeasurementList {
     pub template: u8,                       // entry format template, default is '1:ima'.
     inner: BTreeMap<u64, MeasurementEntry>, // entry
 }
+
+
+struct PCR{}
+
+impl PCR {
+    pub fn op() -> MutexGuard<'static, RAMTpm> {
+        PCR_DEVICE.lock()
+    }
+}
+
+
 
 impl MeasurementList {
     const fn default() -> Self {
@@ -32,10 +51,7 @@ impl MeasurementList {
         IMA_MEASUREMENT_LIST.lock()
     }
 
-    pub fn reset_tpm() {
-        TPM::op().reset_all();
-    }
-
+    
     pub fn get_all(&self) -> Vec<MeasurementEntry> {
         self.inner.values().cloned().collect()
     }
@@ -44,19 +60,28 @@ impl MeasurementList {
         self.inner.get(&id)
     }
 
+    // tpm operation
     pub fn add_entry(&mut self, entry: MeasurementEntry) {
-        TPM::op().extend_pcr(tpm::DEFAULT_PCR_REGISTER as u32, entry.template_hash);
+        PCR::op().extend_pcr(DEFAULT_PCR_REGISTER,entry.template_hash);
         let entry_id = self.inner.len() + 1;
         self.inner.insert(entry_id as u64, entry);
     }
 
+    pub fn reset_tpm() {
+        PCR::op().read_pcr(DEFAULT_PCR_REGISTER);
+    }
+
     pub fn verify_ml(&self) -> bool {
         let entries = self.get_all();
-        let mut tmp_data: tpm::PcrValue = [0; tpm::PCR_BITSIZE];
+        let mut tmp_data: PcrValue = [0; PCR_BITSIZE];
         for entry in entries {
-            tmp_data = tpm::default_extended(tmp_data, entry.template_hash);
+            tmp_data = default_extended_alg(tmp_data, entry.template_hash);
         }
-
-        tmp_data == TPM::op().read_pcr(tpm::DEFAULT_PCR_REGISTER as u32)
+        let expect = PCR::op().read_pcr(DEFAULT_PCR_REGISTER);
+        tmp_data == expect
     }
+
 }
+
+
+

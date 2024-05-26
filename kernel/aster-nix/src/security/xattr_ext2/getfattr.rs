@@ -1,6 +1,6 @@
 use crate::alloc::vec::Vec;
 use super::listfattr::list_attr;
-use super::XattrEntry;
+use super::xattr::XattrEntry;
 use crate::Errno;
 
 

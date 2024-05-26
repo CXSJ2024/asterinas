@@ -5,9 +5,9 @@ use crate::Errno;
 use crate::alloc::vec::Vec;
 use crate::fs::fs_resolver::FsPath;
 use crate::fs::fs_resolver::FsResolver;
-use super::Xattr;
-use super::XattrEntry;
-use super::encode_xattr_entry;
+use super::xattr::Xattr;
+use super::xattr::XattrEntry;
+use super::util::encode_xattr_entry;
 
 pub fn set_xattr(abs_path: &str,attribute: &str, value: &str) -> Result<(), Errno>{
     let _ = check_perm(attribute)?;

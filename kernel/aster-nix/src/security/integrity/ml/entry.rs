@@ -1,7 +1,8 @@
 use core::fmt::Display;
 
 
-use alloc::string::String;
+use alloc::string::{String, ToString};
+use aster_frame::ima::tpm::{DEFAULT_PCR_REGISTER, PCR_BITSIZE};
 
 
 
@@ -27,5 +28,28 @@ impl Display for MeasurementEntry{
     }
 }
 
+impl MeasurementEntry{
+    pub fn new(hint:&str) -> Self{
+        MeasurementEntry{ 
+            pcr: DEFAULT_PCR_REGISTER, 
+            template_hash: [0;PCR_BITSIZE], 
+            filedata_hash: [0;HASH_DATA_SIZE], 
+            filename_hint: hint.to_string(), 
+            field: 0 
+        }
+    }
+}
+
+impl Default for MeasurementEntry{
+    fn default() -> Self {
+        Self { 
+            pcr: DEFAULT_PCR_REGISTER, 
+            template_hash: [0;PCR_BITSIZE], 
+            filedata_hash: [0;HASH_DATA_SIZE], 
+            filename_hint: "".to_string(), 
+            field: 0 
+        }
+    }
+}
 
 

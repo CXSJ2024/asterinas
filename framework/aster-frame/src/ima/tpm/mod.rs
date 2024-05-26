@@ -1,11 +1,7 @@
-use ram_tpm::RAMTpm;
-use spin::{Mutex, MutexGuard};
-
 pub mod ram_tpm;
 
 pub const PCR_BITSIZE: usize = 20;
-pub static DEFAULT_PCR_REGISTER: usize = 10;
-
+pub static DEFAULT_PCR_REGISTER: u32 = 10;
 pub type PcrValue = [u8; PCR_BITSIZE];
 pub trait PcrOp {
     fn read_pcr(&self, reg: u32) -> PcrValue;
@@ -14,23 +10,13 @@ pub trait PcrOp {
     fn reset_all(&self);
 }
 
-static TPM_DEVICE: Mutex<RAMTpm> = Mutex::new(RAMTpm {});
-
-pub struct TPM {}
-
-impl TPM {
-    pub fn op() -> MutexGuard<'static, RAMTpm> {
-        TPM_DEVICE.lock()
-    }
-}
 
 // sha(read_pcr(reg)||data)
-pub fn default_extended(old_data: PcrValue, new_data: PcrValue) -> PcrValue {
+pub fn default_extended_alg(old_data: PcrValue, new_data: PcrValue) -> PcrValue {
     let result = [old_data, new_data].concat();
     //let hash = Sha256::digest(&result[..]);
     //TODO:
-    todo!();
     let mut res = [0 as u8; PCR_BITSIZE];
-    res.copy_from_slice(&result[..PCR_BITSIZE]);
+    res.copy_from_slice(&result[PCR_BITSIZE..2*PCR_BITSIZE]);
     res
 }

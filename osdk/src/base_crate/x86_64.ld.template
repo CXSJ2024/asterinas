@@ -37,6 +37,7 @@ SECTIONS
 
     . = ALIGN(8);
     .ima                    : AT(ADDR(.ima) - KERNEL_VMA) {
+        
         PROVIDE(__ima = .);
         KEEP(*(.ima .ima.*))
     }

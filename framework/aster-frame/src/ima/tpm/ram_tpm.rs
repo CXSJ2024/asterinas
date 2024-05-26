@@ -1,16 +1,16 @@
 use alloc::vec::Vec;
 use pod::Pod;
-use crate::early_print;
 
-use super::{PCR_BITSIZE,PcrValue,DEFAULT_PCR_REGISTER,PcrOp,default_extended};
+
+use super::{PCR_BITSIZE,PcrValue,DEFAULT_PCR_REGISTER,PcrOp,default_extended_alg};
 
 
 
 type AlignedPcrValue = [u8;24];
 
-pub struct RAMTpm{
-    
-}
+pub struct RAMTpm{}
+
+
 
 impl PcrOp for RAMTpm {
     fn read_pcr(&self,reg:u32) -> PcrValue {
@@ -21,7 +21,7 @@ impl PcrOp for RAMTpm {
     fn extend_pcr(&self,reg:u32,data:PcrValue) {
         let base_addr = ima_begin() + reg as usize * PCR_BITSIZE;
         let old_data = self.read_pcr(reg);
-        write_ima(&align_data(default_extended(old_data,data)).to_vec(), base_addr);
+        write_ima(&align_data(default_extended_alg(old_data,data)).to_vec(), base_addr);
     }
 
     fn reset_pcr(&self,reg:u32) {

@@ -2,9 +2,9 @@ use alloc::string::String;
 
 
 use crate::alloc::vec::Vec;
-use super::Xattr;
-use super::XattrEntry;
-use super::decode_xattr_entry;
+use super::xattr::Xattr;
+use super::xattr::XattrEntry;
+use super::util::decode_xattr_entry;
 use crate::fs::fs_resolver::FsResolver;
 use crate::fs::fs_resolver::FsPath;
 use crate::Errno;
