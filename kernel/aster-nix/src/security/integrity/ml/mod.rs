@@ -1,60 +1,54 @@
-use alloc::string::ToString;
+use alloc::string::String;
+use aster_frame::ima::tpm::PcrOp;
 
 
-use crate::println;
+use crate::{
+    fs::{
+        fs_resolver::{FsPath, FsResolver},
+        utils::InodeMode,
+    }, Result
+};
 
 use self::entry_list::MeasurementList;
 
 use self::entry::MeasurementEntry;
+use spin::MutexGuard;
+
 
 
 pub mod entry_list;
 pub mod entry;
 
 
+pub const MEASUREMENT_LIST_ASCII: &str = "/ascii_runtime_measurements";
 
-
-pub fn measurement_list_init(){
-    MeasurementList::reset_tpm();
+pub fn measurement_list_init() -> Result<()>{
+    MeasurementList::reset_pcr();
+    let fs_resolver = FsResolver::new();
+    let root_inode = fs_resolver.root().inode();
+    let ml_inode = root_inode.create(
+        &MEASUREMENT_LIST_ASCII[1..],
+        crate::fs::utils::InodeType::File,
+        InodeMode::all(),
+    )?;
+    Ok(())
 }
 
-
-
-
-pub fn test_measurement_entry(){
-    MeasurementList::reset_tpm();
-    let mut ml = MeasurementList::get_list();
-    // test data
-    let entry_data1 = MeasurementEntry{
-        pcr: 10,
-        template_hash: [0xa;20],
-        filedata_hash: [0xb;40],
-        filename_hint: "/regression/hello_world/hello_world".to_string(),
-        field: 0,
-    };
-    let entry_data2 = MeasurementEntry{
-        pcr: 10,
-        template_hash: [0xc;20],
-        filedata_hash: [0xd;40],
-        filename_hint: "/regression/hello_world/hello_world".to_string(),
-        field: 0,
-    };
-    let entry_data3 = MeasurementEntry{
-        pcr: 10,
-        template_hash: [0xe;20],
-        filedata_hash: [0xf;40],
-        filename_hint: "/regression/hello_world/hello_world".to_string(),
-        field: 0,
-    };
-    ml.add_entry(entry_data1);
-    ml.add_entry(entry_data2);
-    ml.add_entry(entry_data3);
-    let ml_data = ml.get_all();
-    for e in ml_data{
-        println!("{}",e);
+pub fn sync_write_file(ml:&mut MutexGuard<'static, entry_list::MeasurementList>) -> Result<()>{
+    let inode = FsResolver::new().lookup(&FsPath::new(0, MEASUREMENT_LIST_ASCII)?)?;
+    // let e :String = ml.get_entry(1).unwrap().clone().into();
+    // println!("{}",e);
+    let entries = ml.get_all();
+    let mut idx:usize = 0;
+    for e in entries{
+        let rec :String = e.into(); 
+        inode.inode().write_at(idx, rec.as_bytes());
+        idx += rec.len();
     }
-    println!("measurement list integrity:{}",ml.verify_ml());
+    Ok(())
 }
+
+
 
 
 

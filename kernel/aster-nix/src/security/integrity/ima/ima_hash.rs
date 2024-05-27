@@ -25,7 +25,7 @@ pub struct IMAHash {
 
 #[derive(Eq, PartialEq, Default)]
 pub struct VecU8 {
-    data: Vec<u8>,
+    pub data: Vec<u8>,
 }
 
 impl Display for IMAAlogrithm {

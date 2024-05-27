@@ -22,7 +22,7 @@ use crate::security::integrity::{
 };
 
 use super::{set_xattr,XATTR_PATH,IMA_XATTR_KEY};
-
+use aster_frame::ima::tpm::{PCR_BITSIZE,PcrValue};
 
 pub struct Xattr {
     pub xattr_block: Arc<dyn Inode>,
@@ -60,7 +60,9 @@ pub fn measure_all(ml:&mut MutexGuard<'static, entry_list::MeasurementList>,reso
         let measurement: String = cal_fd_hash(fs_handler.dentry().inode(), 1024, None)?.into();
         set_xattr(root_dir, IMA_XATTR_KEY, &measurement)?;
         // todo()
-        let entry = MeasurementEntry::new(root_dir);
+        let template_hash = cal_fd_hash(fs_handler.dentry().inode(), 1024, None)?.hash.data;
+        let content_hash = cal_fd_hash(fs_handler.dentry().inode(), 1024, None)?.hash.data;
+        let entry = MeasurementEntry::new(root_dir,&template_hash,&content_hash);
         ml.add_entry(entry);
     } else if fs_handler.dentry().type_().is_directory() {
         let mut items: Vec<String> = Vec::new();

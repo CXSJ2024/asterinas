@@ -2,12 +2,13 @@ use alloc::vec::Vec;
 use pod::Pod;
 
 
-use super::{PCR_BITSIZE,PcrValue,DEFAULT_PCR_REGISTER,PcrOp,default_extended_alg};
+use super::{PCR_BITSIZE,PcrValue,DEFAULT_PCR_REGISTER,PcrOp};
 
 
 
 type AlignedPcrValue = [u8;24];
 
+#[derive(PartialEq, Eq)]
 pub struct RAMTpm{}
 
 
@@ -20,13 +21,12 @@ impl PcrOp for RAMTpm {
 
     fn extend_pcr(&self,reg:u32,data:PcrValue) {
         let base_addr = ima_begin() + reg as usize * PCR_BITSIZE;
-        let old_data = self.read_pcr(reg);
-        write_ima(&align_data(default_extended_alg(old_data,data)).to_vec(), base_addr);
+        write_ima(&data.to_vec(), base_addr);
     }
 
     fn reset_pcr(&self,reg:u32) {
         let base_addr = ima_begin() + reg as usize * PCR_BITSIZE;
-        write_ima(&align_data([0;PCR_BITSIZE]).to_vec(), base_addr)
+        write_ima(&[0;PCR_BITSIZE].to_vec(), base_addr)
     }
 
     fn reset_all(&self) {
@@ -56,10 +56,15 @@ fn read_ima(base_addr:usize, len: usize) -> Vec<u8>{
 
 fn write_ima(data :&Vec<u8>, base_addr:usize){
     let step = 8;
-    for i in 0..data.len()/step{
+    let mut cpy = Vec::new();
+    cpy.clone_from(data);
+    while cpy.len() % 8 != 0{
+        cpy.push(0);
+    }
+    for i in 0..cpy.len()/step{
         let mut tmp:u64 = 0;
         for j in 0..step{
-            tmp += (data[i*step+j] as u64) << step*j;
+            tmp += (cpy[i*step+j] as u64) << step*j;
         }
         unsafe{
             ((base_addr + step*i) as *mut u64 ).write(tmp);

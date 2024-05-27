@@ -1,5 +1,7 @@
-use alloc::{collections::BTreeMap, vec::Vec};
+use alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec};
 
+use digest::DynDigest;
+use sha1::Sha1;
 use spin::{Mutex, MutexGuard};
 
 use aster_frame::{arch::console::print, ima::tpm::{PcrValue, DEFAULT_PCR_REGISTER, PCR_BITSIZE}};
@@ -8,13 +10,41 @@ use aster_frame::{arch::console::print, ima::tpm::{PcrValue, DEFAULT_PCR_REGISTE
 use super::entry::MeasurementEntry;
 
 // use ram tpm
-use aster_frame::ima::tpm::{ram_tpm::RAMTpm,default_extended_alg,PcrOp};
-static PCR_DEVICE: Mutex<RAMTpm> = Mutex::new(RAMTpm {});
+use aster_frame::ima::tpm::{ram_tpm::RAMTpm,PcrOp};
+
 
 
 
 static IMA_MEASUREMENT_LIST: Mutex<MeasurementList> = Mutex::new(MeasurementList::default());
 
+
+
+
+#[derive(PartialEq, Eq)]
+pub enum PCR{
+    Ram,
+    TpmChip,
+    Tdx,
+} 
+
+impl PCR {
+
+    pub fn dev_type() -> Self{
+        Self::Ram
+    }
+
+    pub fn op() -> Box<dyn PcrOp> {
+        Box::new(RAMTpm {})
+    }
+
+    pub fn has_pcr() -> bool{
+        if Self::dev_type() == Self::Ram{
+            true
+        }else{
+            false
+        }
+    }
+}
 
 
 pub struct MeasurementList {
@@ -24,17 +54,6 @@ pub struct MeasurementList {
     pub template: u8,                       // entry format template, default is '1:ima'.
     inner: BTreeMap<u64, MeasurementEntry>, // entry
 }
-
-
-struct PCR{}
-
-impl PCR {
-    pub fn op() -> MutexGuard<'static, RAMTpm> {
-        PCR_DEVICE.lock()
-    }
-}
-
-
 
 impl MeasurementList {
     const fn default() -> Self {
@@ -62,20 +81,33 @@ impl MeasurementList {
 
     // tpm operation
     pub fn add_entry(&mut self, entry: MeasurementEntry) {
-        PCR::op().extend_pcr(DEFAULT_PCR_REGISTER,entry.template_hash);
+        if PCR::has_pcr(){
+            let extended_data = default_extended_alg(
+                PCR::op().read_pcr(DEFAULT_PCR_REGISTER), 
+                entry.template_hash
+            );
+            PCR::op().extend_pcr(DEFAULT_PCR_REGISTER,extended_data);
+        }
         let entry_id = self.inner.len() + 1;
         self.inner.insert(entry_id as u64, entry);
     }
 
-    pub fn reset_tpm() {
-        PCR::op().read_pcr(DEFAULT_PCR_REGISTER);
+    pub fn reset_pcr() {
+        if PCR::has_pcr(){
+            PCR::op().reset_pcr(DEFAULT_PCR_REGISTER);
+        }
     }
 
+
+
     pub fn verify_ml(&self) -> bool {
+        if !PCR::has_pcr() {
+            return true;
+        }
         let entries = self.get_all();
         let mut tmp_data: PcrValue = [0; PCR_BITSIZE];
         for entry in entries {
-            tmp_data = default_extended_alg(tmp_data, entry.template_hash);
+            tmp_data = default_extended_alg(tmp_data,entry.template_hash);
         }
         let expect = PCR::op().read_pcr(DEFAULT_PCR_REGISTER);
         tmp_data == expect
@@ -84,4 +116,12 @@ impl MeasurementList {
 }
 
 
-
+// sha(read_pcr(reg)||data)
+fn default_extended_alg(old_data:PcrValue, new_data: PcrValue) -> PcrValue {
+    let tmp = [old_data, new_data].concat();
+    let mut hasher:Box<dyn DynDigest> = Box::new(Sha1::default());
+    hasher.update(&tmp[..]);
+    let mut res = [0 as u8; PCR_BITSIZE];
+    res.copy_from_slice(&hasher.finalize().to_vec()[..PCR_BITSIZE]);
+    res
+}

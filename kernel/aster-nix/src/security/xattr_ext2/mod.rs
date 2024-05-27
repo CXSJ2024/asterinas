@@ -2,13 +2,15 @@ use self::setfattr::set_xattr;
 use crate::{
     fs::{
         fs_resolver::FsResolver,
-        utils::{Inode, InodeMode},
+        utils::InodeMode,
     },
-    println,
+    println, 
+    security::integrity::ml::{entry_list::PCR,sync_write_file},
 };
-
+use aster_frame::ima::tpm::{PcrOp, DEFAULT_PCR_REGISTER};
 use super::integrity::ml::entry_list;
 use xattr::{Xattr,measure_all};
+
 
 pub mod getfattr;
 pub mod listfattr;
@@ -16,7 +18,7 @@ pub mod setfattr;
 pub mod xattr;
 mod util;
 
-const XATTR_PATH: &str = "/xattr";
+pub const XATTR_PATH: &str = "/xattr";
 
 const USER_EXECUTABLE_PREFIX: &str = "/regression";
 
@@ -39,9 +41,11 @@ pub fn xattr_init() -> Option<Xattr> {
         if ml.verify_ml() {
             let _ = Xattr::xattr_handler();
             println!(
-                "[kernel] IMA boot measure done, xattr in inode #{}",
-                inode.metadata().ino
+                "[kernel] IMA boot measure done, pcr#{} = {:x?}",
+                DEFAULT_PCR_REGISTER,
+                PCR::op().read_pcr(DEFAULT_PCR_REGISTER)
             );
+            sync_write_file(&mut ml);
             Some(Xattr { xattr_block: inode })
         }else{
             println!(

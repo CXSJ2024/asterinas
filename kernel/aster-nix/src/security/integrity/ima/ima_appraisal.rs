@@ -11,7 +11,13 @@ use crate::{
         utils::{Inode, InodeType},
     },
     prelude::*,
-    security::{integrity::ima::ima_hash::IMAHash, xattr_ext2::getfattr::get_xattr},
+    security::{
+        integrity::{
+            ima::ima_hash::IMAHash, 
+            ml::{self, entry::MeasurementEntry, entry_list,MEASUREMENT_LIST_ASCII}
+        }, 
+        xattr_ext2::{getfattr::get_xattr,XATTR_PATH}
+    },
 };
 
 pub fn ima_appraisal_dentry(dentry: &Dentry) -> Result<()> {
@@ -63,8 +69,10 @@ fn ima_appraisal_handle(inode: &Arc<dyn Inode>, abs_path: &str) -> Result<()> {
             }
         }
         Err(_) => {
+            if abs_path == XATTR_PATH || abs_path == MEASUREMENT_LIST_ASCII{
+                return Ok(());
+            }
             println!("{}'s ima xattr not found, remeasure it", abs_path);
-
             let tmp: String = IMAHash::default().into();
             set_xattr(abs_path, IMA_XATTR, &tmp)?;
             ima_remeasure_handle(inode, abs_path)?;
@@ -76,6 +84,9 @@ fn ima_appraisal_handle(inode: &Arc<dyn Inode>, abs_path: &str) -> Result<()> {
 fn ima_remeasure_handle(inode: &Arc<dyn Inode>, abs_path: &str) -> Result<()> {
     let hash = IMAHash::from(get_xattr(abs_path, IMA_XATTR).unwrap().value);
     let res = cal_fd_hash(inode, 1024, Some(hash.algo))?;
+    let mut ml = entry_list::MeasurementList::get_list();
+    ml.add_entry(MeasurementEntry::new(abs_path, &res.hash.data, &res.hash.data));
+    ml::sync_write_file(&mut ml);
     let res_string: String = res.into();
     let _ = set_xattr(abs_path, IMA_XATTR, &res_string)?;
     Ok(())
