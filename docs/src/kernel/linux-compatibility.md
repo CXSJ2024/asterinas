@@ -15,7 +15,7 @@ support the loading of Linux kernel modules.
 ## System Calls
 
 At the time of writing,
-Asterinas implements 130 out of the 310+ system calls
+Asterinas implements 120 out of the 310+ system calls
 provided by Linux on x86-64 architecture.
 
 | Numbers | Names            | Is Implemented  |
@@ -112,9 +112,9 @@ provided by Linux on x86-64 architecture.
 | 89      | readlink         | ✅              |
 | 90      | chmod            | ✅              |
 | 91      | fchmod           | ✅              |
-| 92      | chown            | ✅              |
-| 93      | fchown           | ✅              |
-| 94      | lchown           | ✅              |
+| 92      | chown            | ❌              |
+| 93      | fchown           | ❌              |
+| 94      | lchown           | ❌              |
 | 95      | umask            | ✅              |
 | 96      | gettimeofday     | ✅              |
 | 97      | getrlimit        | ❌              |
@@ -150,7 +150,7 @@ provided by Linux on x86-64 architecture.
 | 127     | rt_sigpending    | ❌              |
 | 128     | rt_sigtimedwait  | ❌              |
 | 129     | rt_sigqueueinfo  | ❌              |
-| 130     | rt_sigsuspend    | ✅              |
+| 130     | rt_sigsuspend    | ❌              |
 | 131     | sigaltstack      | ✅              |
 | 132     | utime            | ❌              |
 | 133     | mknod            | ❌              |
@@ -181,7 +181,7 @@ provided by Linux on x86-64 architecture.
 | 158     | arch_prctl       | ✅              |
 | 159     | adjtimex         | ❌              |
 | 160     | setrlimit        | ❌              |
-| 161     | chroot           | ✅              |
+| 161     | chroot           | ❌              |
 | 162     | sync             | ✅              |
 | 163     | acct             | ❌              |
 | 164     | settimeofday     | ❌              |
@@ -280,7 +280,7 @@ provided by Linux on x86-64 architecture.
 | 257     | openat           | ✅              |
 | 258     | mkdirat          | ✅              |
 | 259     | mknodat          | ❌              |
-| 260     | fchownat         | ✅              |
+| 260     | fchownat         | ❌              |
 | 261     | futimesat        | ❌              |
 | 262     | newfstatat       | ✅              |
 | 263     | unlinkat         | ✅              |
@@ -301,16 +301,16 @@ provided by Linux on x86-64 architecture.
 | 278     | vmsplice         | ❌              |
 | 279     | move_pages       | ❌              |
 | 280     | utimensat        | ✅              |
-| 281     | epoll_pwait      | ✅              |
+| 281     | epoll_pwait      | ❌              |
 | 282     | signalfd         | ❌              |
 | 283     | timerfd_create   | ❌              |
-| 284     | eventfd          | ✅              |
+| 284     | eventfd          | ❌              |
 | 285     | fallocate        | ❌              |
 | 286     | timerfd_settime  | ❌              |
 | 287     | timerfd_gettime  | ❌              |
-| 288     | accept4          | ✅              |
+| 288     | accept4          | ❌              |
 | 289     | signalfd4        | ❌              |
-| 290     | eventfd2         | ✅              |
+| 290     | eventfd2         | ❌              |
 | 291     | epoll_create1    | ✅              |
 | 292     | dup3             | ❌              |
 | 293     | pipe2            | ✅              |
@@ -336,7 +336,6 @@ provided by Linux on x86-64 architecture.
 | 313	  | finit_module     | ❌              |
 | 318	  | getrandom        | ✅              |
 | 322	  | execveat         | ✅              |
-| 435	  | clone3           | ✅              |
 
 ## File Systems
 

@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::{
-    fmt::{self},
-    sync::atomic::{AtomicU64, Ordering::Relaxed},
-};
+use core::fmt::{self};
+use core::sync::atomic::{AtomicU64, Ordering::Relaxed};
 
 use align_ext::AlignExt;
 
@@ -48,7 +46,7 @@ impl AtomicBits {
         assert!(index < self.num_bits);
         let i = index / 64;
         let j = index % 64;
-        // SAFETY: Variable i is in range as variable index is in range.
+        // Safety. Variable i is in range as variable index is in range.
         let u64_atomic = unsafe { self.u64s.get_unchecked(i) };
         (u64_atomic.load(Relaxed) & 1 << j) != 0
     }
@@ -58,7 +56,7 @@ impl AtomicBits {
         assert!(index < self.num_bits);
         let i = index / 64;
         let j = index % 64;
-        // SAFETY: Variable i is in range as variable index is in range.
+        // Safety. Variable i is in range as variable index is in range.
         let u64_atomic = unsafe { self.u64s.get_unchecked(i) };
         if new_bit {
             u64_atomic.fetch_or(1 << j, Relaxed);
@@ -288,7 +286,7 @@ impl fmt::Debug for AtomicBits {
     }
 }
 
-#[cfg(ktest)]
+#[if_cfg_ktest]
 mod test {
     use super::*;
 

@@ -2,14 +2,17 @@
 
 use alloc::vec;
 use core::{
+    fmt::Debug,
+    iter::Iterator,
     marker::PhantomData,
     ops::{BitAnd, BitOr, Not, Range},
 };
-
 use pod::Pod;
 
-use super::{frame_allocator, HasPaddr, VmIo};
-use crate::{prelude::*, vm::PAGE_SIZE, Error};
+use crate::{config::PAGE_SIZE, prelude::*, Error};
+
+use super::{frame_allocator, HasPaddr};
+use super::{Paddr, VmIo};
 
 /// A collection of page frames (physical memory pages).
 ///
@@ -105,9 +108,7 @@ impl IntoIterator for VmFrameVec {
 
 impl VmIo for VmFrameVec {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
-        // Do bound check with potential integer overflow in mind
-        let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
-        if max_offset > self.nbytes() {
+        if buf.len() + offset > self.nbytes() {
             return Err(Error::InvalidArgs);
         }
 
@@ -125,9 +126,7 @@ impl VmIo for VmFrameVec {
     }
 
     fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
-        // Do bound check with potential integer overflow in mind
-        let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
-        if max_offset > self.nbytes() {
+        if buf.len() + offset > self.nbytes() {
             return Err(Error::InvalidArgs);
         }
 
@@ -247,9 +246,9 @@ impl VmFrame {
             return;
         }
 
-        // SAFETY: src and dst is not overlapped.
+        // Safety: src and dst is not overlapped.
         unsafe {
-            crate::arch::mm::fast_copy_nonoverlapping(src.as_ptr(), self.as_mut_ptr(), PAGE_SIZE);
+            core::ptr::copy_nonoverlapping(src.as_ptr(), self.as_mut_ptr(), PAGE_SIZE);
         }
     }
 }
@@ -257,22 +256,20 @@ impl VmFrame {
 impl<'a> VmFrame {
     /// Returns a reader to read data from it.
     pub fn reader(&'a self) -> VmReader<'a> {
-        // SAFETY: the memory of the page is contiguous and is valid during `'a`.
+        // Safety: the memory of the page is contiguous and is valid during `'a`.
         unsafe { VmReader::from_raw_parts(self.as_ptr(), PAGE_SIZE) }
     }
 
     /// Returns a writer to write data into it.
     pub fn writer(&'a self) -> VmWriter<'a> {
-        // SAFETY: the memory of the page is contiguous and is valid during `'a`.
+        // Safety: the memory of the page is contiguous and is valid during `'a`.
         unsafe { VmWriter::from_raw_parts_mut(self.as_mut_ptr(), PAGE_SIZE) }
     }
 }
 
 impl VmIo for VmFrame {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
-        // Do bound check with potential integer overflow in mind
-        let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
-        if max_offset > PAGE_SIZE {
+        if buf.len() + offset > PAGE_SIZE {
             return Err(Error::InvalidArgs);
         }
         let len = self.reader().skip(offset).read(&mut buf.into());
@@ -281,9 +278,7 @@ impl VmIo for VmFrame {
     }
 
     fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
-        // Do bound check with potential integer overflow in mind
-        let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
-        if max_offset > PAGE_SIZE {
+        if buf.len() + offset > PAGE_SIZE {
             return Err(Error::InvalidArgs);
         }
         let len = self.writer().skip(offset).write(&mut buf.into());
@@ -295,7 +290,7 @@ impl VmIo for VmFrame {
 impl Drop for VmFrame {
     fn drop(&mut self) {
         if self.need_dealloc() && Arc::strong_count(&self.frame_index) == 1 {
-            // SAFETY: the frame index is valid.
+            // Safety: the frame index is valid.
             unsafe {
                 frame_allocator::dealloc_single(self.frame_index());
             }
@@ -322,17 +317,17 @@ impl Drop for VmFrame {
 /// ```
 #[derive(Debug, Clone)]
 pub struct VmSegment {
-    inner: VmSegmentInner,
+    inner: Arc<Inner>,
     range: Range<usize>,
 }
 
-#[derive(Debug, Clone)]
-struct VmSegmentInner {
-    start_frame_index: Arc<Paddr>,
+#[derive(Debug)]
+struct Inner {
+    start_frame_index: Paddr,
     nframes: usize,
 }
 
-impl VmSegmentInner {
+impl Inner {
     /// Creates the inner part of 'VmSegment'.
     ///
     /// # Safety
@@ -341,13 +336,14 @@ impl VmSegmentInner {
     unsafe fn new(paddr: Paddr, nframes: usize, flags: VmFrameFlags) -> Self {
         assert_eq!(paddr % PAGE_SIZE, 0);
         Self {
-            start_frame_index: Arc::new((paddr / PAGE_SIZE).bitor(flags.bits)),
+            start_frame_index: (paddr / PAGE_SIZE).bitor(flags.bits),
             nframes,
         }
     }
 
     fn start_frame_index(&self) -> usize {
-        (*self.start_frame_index).bitand(VmFrameFlags::all().bits().not())
+        self.start_frame_index
+            .bitand(VmFrameFlags::all().bits().not())
     }
 
     fn start_paddr(&self) -> Paddr {
@@ -371,7 +367,7 @@ impl VmSegment {
     /// as part of either a `VmFrame` or `VmSegment`.
     pub(crate) unsafe fn new(paddr: Paddr, nframes: usize, flags: VmFrameFlags) -> Self {
         Self {
-            inner: VmSegmentInner::new(paddr, nframes, flags),
+            inner: Arc::new(Inner::new(paddr, nframes, flags)),
             range: 0..nframes,
         }
     }
@@ -414,7 +410,7 @@ impl VmSegment {
     }
 
     fn need_dealloc(&self) -> bool {
-        (*self.inner.start_frame_index & VmFrameFlags::NEED_DEALLOC.bits()) != 0
+        (self.inner.start_frame_index & VmFrameFlags::NEED_DEALLOC.bits()) != 0
     }
 
     fn start_frame_index(&self) -> usize {
@@ -433,22 +429,20 @@ impl VmSegment {
 impl<'a> VmSegment {
     /// Returns a reader to read data from it.
     pub fn reader(&'a self) -> VmReader<'a> {
-        // SAFETY: the memory of the page frames is contiguous and is valid during `'a`.
+        // Safety: the memory of the page frames is contiguous and is valid during `'a`.
         unsafe { VmReader::from_raw_parts(self.as_ptr(), self.nbytes()) }
     }
 
     /// Returns a writer to write data into it.
     pub fn writer(&'a self) -> VmWriter<'a> {
-        // SAFETY: the memory of the page frames is contiguous and is valid during `'a`.
+        // Safety: the memory of the page frames is contiguous and is valid during `'a`.
         unsafe { VmWriter::from_raw_parts_mut(self.as_mut_ptr(), self.nbytes()) }
     }
 }
 
 impl VmIo for VmSegment {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
-        // Do bound check with potential integer overflow in mind
-        let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
-        if max_offset > self.nbytes() {
+        if buf.len() + offset > self.nbytes() {
             return Err(Error::InvalidArgs);
         }
         let len = self.reader().skip(offset).read(&mut buf.into());
@@ -457,9 +451,7 @@ impl VmIo for VmSegment {
     }
 
     fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
-        // Do bound check with potential integer overflow in mind
-        let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
-        if max_offset > self.nbytes() {
+        if buf.len() + offset > self.nbytes() {
             return Err(Error::InvalidArgs);
         }
         let len = self.writer().skip(offset).write(&mut buf.into());
@@ -470,26 +462,14 @@ impl VmIo for VmSegment {
 
 impl Drop for VmSegment {
     fn drop(&mut self) {
-        if self.need_dealloc() && Arc::strong_count(&self.inner.start_frame_index) == 1 {
-            // SAFETY: the range of contiguous page frames is valid.
+        if self.need_dealloc() && Arc::strong_count(&self.inner) == 1 {
+            // Safety: the range of contiguous page frames is valid.
             unsafe {
                 frame_allocator::dealloc_contiguous(
                     self.inner.start_frame_index(),
                     self.inner.nframes,
                 );
             }
-        }
-    }
-}
-
-impl From<VmFrame> for VmSegment {
-    fn from(frame: VmFrame) -> Self {
-        Self {
-            inner: VmSegmentInner {
-                start_frame_index: frame.frame_index.clone(),
-                nframes: 1,
-            },
-            range: 0..1,
         }
     }
 }
@@ -533,7 +513,7 @@ impl<'a> VmReader<'a> {
 
     /// Returns the number of bytes for the remaining data.
     pub const fn remain(&self) -> usize {
-        // SAFETY: the end is equal to or greater than the cursor.
+        // Safety: the end is equal to or greater than the cursor.
         unsafe { self.end.sub_ptr(self.cursor) }
     }
 
@@ -552,7 +532,7 @@ impl<'a> VmReader<'a> {
     /// This method ensures the postcondition of `self.remain() <= max_remain`.
     pub const fn limit(mut self, max_remain: usize) -> Self {
         if max_remain < self.remain() {
-            // SAFETY: the new end is less than the old end.
+            // Safety: the new end is less than the old end.
             unsafe { self.end = self.cursor.add(max_remain) };
         }
         self
@@ -567,7 +547,7 @@ impl<'a> VmReader<'a> {
     pub fn skip(mut self, nbytes: usize) -> Self {
         assert!(nbytes <= self.remain());
 
-        // SAFETY: the new cursor is less than or equal to the end.
+        // Safety: the new cursor is less than or equal to the end.
         unsafe { self.cursor = self.cursor.add(nbytes) };
         self
     }
@@ -586,10 +566,10 @@ impl<'a> VmReader<'a> {
             return 0;
         }
 
-        // SAFETY: the memory range is valid since `copy_len` is the minimum
+        // Safety: the memory range is valid since `copy_len` is the minimum
         // of the reader's remaining data and the writer's available space.
         unsafe {
-            crate::arch::mm::fast_copy(self.cursor, writer.cursor, copy_len);
+            core::ptr::copy(self.cursor, writer.cursor, copy_len);
             self.cursor = self.cursor.add(copy_len);
             writer.cursor = writer.cursor.add(copy_len);
         }
@@ -614,7 +594,7 @@ impl<'a> VmReader<'a> {
 
 impl<'a> From<&'a [u8]> for VmReader<'a> {
     fn from(slice: &'a [u8]) -> Self {
-        // SAFETY: the range of memory is contiguous and is valid during `'a`.
+        // Safety: the range of memory is contiguous and is valid during `'a`.
         unsafe { Self::from_raw_parts(slice.as_ptr(), slice.len()) }
     }
 }
@@ -658,7 +638,7 @@ impl<'a> VmWriter<'a> {
 
     /// Returns the number of bytes for the available space.
     pub const fn avail(&self) -> usize {
-        // SAFETY: the end is equal to or greater than the cursor.
+        // Safety: the end is equal to or greater than the cursor.
         unsafe { self.end.sub_ptr(self.cursor) }
     }
 
@@ -677,7 +657,7 @@ impl<'a> VmWriter<'a> {
     /// This method ensures the postcondition of `self.avail() <= max_avail`.
     pub const fn limit(mut self, max_avail: usize) -> Self {
         if max_avail < self.avail() {
-            // SAFETY: the new end is less than the old end.
+            // Safety: the new end is less than the old end.
             unsafe { self.end = self.cursor.add(max_avail) };
         }
         self
@@ -692,7 +672,7 @@ impl<'a> VmWriter<'a> {
     pub fn skip(mut self, nbytes: usize) -> Self {
         assert!(nbytes <= self.avail());
 
-        // SAFETY: the new cursor is less than or equal to the end.
+        // Safety: the new cursor is less than or equal to the end.
         unsafe { self.cursor = self.cursor.add(nbytes) };
         self
     }
@@ -711,10 +691,10 @@ impl<'a> VmWriter<'a> {
             return 0;
         }
 
-        // SAFETY: the memory range is valid since `copy_len` is the minimum
+        // Safety: the memory range is valid since `copy_len` is the minimum
         // of the reader's remaining data and the writer's available space.
         unsafe {
-            crate::arch::mm::fast_copy(reader.cursor, self.cursor, copy_len);
+            core::ptr::copy(reader.cursor, self.cursor, copy_len);
             self.cursor = self.cursor.add(copy_len);
             reader.cursor = reader.cursor.add(copy_len);
         }
@@ -723,38 +703,23 @@ impl<'a> VmWriter<'a> {
 
     /// Fills the available space by repeating `value`.
     ///
-    /// Returns the number of values written.
-    ///
     /// # Panic
     ///
     /// The size of the available space must be a multiple of the size of `value`.
     /// Otherwise, the method would panic.
-    pub fn fill<T: Pod>(&mut self, value: T) -> usize {
-        let avail = self.avail();
+    pub fn fill<T: Pod>(&mut self, value: T) {
+        assert!(self.avail() / value.as_bytes().len() > 0);
+        assert!(self.avail() % value.as_bytes().len() == 0);
 
-        assert!((self.cursor as *mut T).is_aligned());
-        assert!(avail % core::mem::size_of::<T>() == 0);
-
-        let written_num = avail / core::mem::size_of::<T>();
-
-        for i in 0..written_num {
-            // SAFETY: `written_num` is calculated by the avail size and the size of the type `T`,
-            // hence the `add` operation and `write` operation are valid and will only manipulate
-            // the memory managed by this writer.
-            unsafe {
-                (self.cursor as *mut T).add(i).write(value);
-            }
+        while self.avail() > 0 {
+            self.write(&mut value.as_bytes().into());
         }
-
-        // The available space has been filled so this cursor can be moved to the end.
-        self.cursor = self.end;
-        written_num
     }
 }
 
 impl<'a> From<&'a mut [u8]> for VmWriter<'a> {
     fn from(slice: &'a mut [u8]) -> Self {
-        // SAFETY: the range of memory is contiguous and is valid during `'a`.
+        // Safety: the range of memory is contiguous and is valid during `'a`.
         unsafe { Self::from_raw_parts_mut(slice.as_mut_ptr(), slice.len()) }
     }
 }

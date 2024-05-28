@@ -1,16 +1,20 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
-use core::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+use core::sync::atomic::AtomicUsize;
 
-use lazy_static::lazy_static;
+use crate::cpu_local;
+use crate::sync::Mutex;
+use crate::{cpu::CpuLocal, trap::disable_local};
+
+use core::sync::atomic::Ordering::Relaxed;
 
 use super::{
     scheduler::{fetch_task, GLOBAL_SCHEDULER},
     task::{context_switch, TaskContext},
     Task, TaskStatus,
 };
-use crate::{cpu_local, sync::SpinLock};
+use alloc::sync::Arc;
+use lazy_static::lazy_static;
 
 pub struct Processor {
     current: Option<Arc<Task>>,
@@ -24,7 +28,7 @@ impl Processor {
             idle_task_cx: TaskContext::default(),
         }
     }
-    fn get_idle_task_ctx_ptr(&mut self) -> *mut TaskContext {
+    fn get_idle_task_cx_ptr(&mut self) -> *mut TaskContext {
         &mut self.idle_task_cx as *mut _
     }
     pub fn take_current(&mut self) -> Option<Arc<Task>> {
@@ -39,7 +43,7 @@ impl Processor {
 }
 
 lazy_static! {
-    static ref PROCESSOR: SpinLock<Processor> = SpinLock::new(Processor::new());
+    static ref PROCESSOR: Mutex<Processor> = Mutex::new(Processor::new());
 }
 
 pub fn take_current_task() -> Option<Arc<Task>> {
@@ -50,8 +54,8 @@ pub fn current_task() -> Option<Arc<Task>> {
     PROCESSOR.lock().current()
 }
 
-pub(crate) fn get_idle_task_ctx_ptr() -> *mut TaskContext {
-    PROCESSOR.lock().get_idle_task_ctx_ptr()
+pub(crate) fn get_idle_task_cx_ptr() -> *mut TaskContext {
+    PROCESSOR.lock().get_idle_task_cx_ptr()
 }
 
 /// call this function to switch to other task by using GLOBAL_SCHEDULER
@@ -61,15 +65,14 @@ pub fn schedule() {
     }
 }
 
-// TODO: This interface of this method is error prone.
-// The method takes an argument for the current task to optimize its efficiency,
-// but the argument provided by the caller may not be the current task, really.
-// Thus, this method should be removed or reworked in the future.
-pub fn preempt(task: &Arc<Task>) {
-    // TODO: Refactor `preempt` and `schedule`
-    // after the Atomic mode and `might_break` is enabled.
+pub fn preempt() {
+    // disable interrupts to avoid nested preemption.
+    let disable_irq = disable_local();
+    let Some(curr_task) = current_task() else {
+        return;
+    };
     let mut scheduler = GLOBAL_SCHEDULER.lock_irq_disabled();
-    if !scheduler.should_preempt(task) {
+    if !scheduler.should_preempt(&curr_task) {
         return;
     }
     let Some(next_task) = scheduler.dequeue() else {
@@ -92,38 +95,29 @@ fn switch_to_task(next_task: Arc<Task>) {
             "Calling schedule() while holding {} locks",
             PREEMPT_COUNT.num_locks()
         );
+        //GLOBAL_SCHEDULER.lock_irq_disabled().enqueue(next_task);
+        //return;
     }
-
-    let current_task_ctx_ptr = match current_task() {
-        None => PROCESSOR.lock().get_idle_task_ctx_ptr(),
+    let current_task_option = current_task();
+    let next_task_cx_ptr = &next_task.inner_ctx() as *const TaskContext;
+    let current_task: Arc<Task>;
+    let current_task_cx_ptr = match current_task_option {
+        None => PROCESSOR.lock().get_idle_task_cx_ptr(),
         Some(current_task) => {
-            let ctx_ptr = current_task.ctx().get();
-
-            let mut task_inner = current_task.inner_exclusive_access();
-
-            debug_assert_ne!(task_inner.task_status, TaskStatus::Sleeping);
-            if task_inner.task_status == TaskStatus::Runnable {
-                drop(task_inner);
-                GLOBAL_SCHEDULER.lock_irq_disabled().enqueue(current_task);
-            } else if task_inner.task_status == TaskStatus::Sleepy {
-                task_inner.task_status = TaskStatus::Sleeping;
+            if current_task.status() == TaskStatus::Runnable {
+                GLOBAL_SCHEDULER
+                    .lock_irq_disabled()
+                    .enqueue(current_task.clone());
             }
-
-            ctx_ptr
+            &mut current_task.inner_exclusive_access().ctx as *mut TaskContext
         }
     };
 
-    let next_task_ctx_ptr = next_task.ctx().get().cast_const();
-
     // change the current task to the next task
-    PROCESSOR.lock().current = Some(next_task.clone());
 
-    // SAFETY:
-    // 1. `ctx` is only used in `schedule()`. We have exclusive access to both the current task
-    //    context and the next task context.
-    // 2. The next task context is a valid task context.
+    PROCESSOR.lock().current = Some(next_task.clone());
     unsafe {
-        context_switch(current_task_ctx_ptr, next_task_ctx_ptr);
+        context_switch(current_task_cx_ptr, next_task_cx_ptr);
     }
 }
 

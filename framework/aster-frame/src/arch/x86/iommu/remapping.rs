@@ -8,7 +8,6 @@ use volatile::{
     Volatile,
 };
 
-use super::{context_table::RootTable, IommuError};
 use crate::{
     arch::{
         iommu::fault,
@@ -19,6 +18,8 @@ use crate::{
     },
     vm::paddr_to_vaddr,
 };
+
+use super::{context_table::RootTable, IommuError};
 
 #[derive(Debug)]
 pub struct RemappingRegisters {
@@ -56,7 +57,7 @@ impl RemappingRegisters {
         };
 
         let vaddr: usize = paddr_to_vaddr(base_address as usize);
-        // SAFETY: All offsets and sizes are strictly adhered to in the manual, and the base address is obtained from Drhd.
+        // Safety: All offsets and sizes are strictly adhered to in the manual, and the base address is obtained from Drhd.
         let mut remapping_reg = unsafe {
             fault::init(vaddr);
             let version = Volatile::new_read_only(&*(vaddr as *const u32));

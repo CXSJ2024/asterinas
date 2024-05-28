@@ -1,18 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::vec::Vec;
-
 use align_ext::AlignExt;
+use alloc::vec::Vec;
 use buddy_system_allocator::FrameAllocator;
 use log::info;
 use spin::Once;
 
+use crate::boot::memory_region::{MemoryRegion, MemoryRegionType};
+use crate::{config::PAGE_SIZE, sync::SpinLock};
+
 use super::{frame::VmFrameFlags, VmFrame, VmFrameVec, VmSegment};
-use crate::{
-    boot::memory_region::{MemoryRegion, MemoryRegionType},
-    sync::SpinLock,
-    vm::PAGE_SIZE,
-};
 
 pub(super) static FRAME_ALLOCATOR: Once<SpinLock<FrameAllocator>> = Once::new();
 
@@ -24,7 +21,7 @@ pub(crate) fn alloc(nframes: usize, flags: VmFrameFlags) -> Option<VmFrameVec> {
         .alloc(nframes)
         .map(|start| {
             let mut vector = Vec::new();
-            // SAFETY: The frame index is valid.
+            // Safety: The frame index is valid.
             unsafe {
                 for i in 0..nframes {
                     let frame = VmFrame::new(
@@ -40,7 +37,7 @@ pub(crate) fn alloc(nframes: usize, flags: VmFrameFlags) -> Option<VmFrameVec> {
 
 pub(crate) fn alloc_single(flags: VmFrameFlags) -> Option<VmFrame> {
     FRAME_ALLOCATOR.get().unwrap().lock().alloc(1).map(|idx|
-            // SAFETY: The frame index is valid.
+            // Safety: The frame index is valid.
             unsafe { VmFrame::new(idx * PAGE_SIZE, flags.union(VmFrameFlags::NEED_DEALLOC)) })
 }
 
@@ -51,7 +48,7 @@ pub(crate) fn alloc_contiguous(nframes: usize, flags: VmFrameFlags) -> Option<Vm
         .lock()
         .alloc(nframes)
         .map(|start|
-            // SAFETY: The range of page frames is contiguous and valid.
+            // Safety: The range of page frames is contiguous and valid.
             unsafe {
             VmSegment::new(
                 start * PAGE_SIZE,
@@ -91,8 +88,7 @@ pub(crate) fn init(regions: &[MemoryRegion]) {
         if region.typ() == MemoryRegionType::Usable {
             // Make the memory region page-aligned, and skip if it is too small.
             let start = region.base().align_up(PAGE_SIZE) / PAGE_SIZE;
-            let region_end = region.base().checked_add(region.len()).unwrap();
-            let end = region_end.align_down(PAGE_SIZE) / PAGE_SIZE;
+            let end = (region.base() + region.len()).align_down(PAGE_SIZE) / PAGE_SIZE;
             if end <= start {
                 continue;
             }

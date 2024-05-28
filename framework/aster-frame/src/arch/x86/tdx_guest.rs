@@ -1,28 +1,21 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use crate::{
+    arch::mm::{is_kernel_vaddr, PageTableFlags},
+    config::PAGE_SIZE,
+    vm::{
+        paddr_to_vaddr,
+        page_table::{PageTableError, KERNEL_PAGE_TABLE},
+    },
+};
+use crate::early_println;
 use iced_x86::{Code, Decoder, DecoderOptions, Instruction, Register};
 use log::warn;
 use tdx_guest::{
-    serial_println, tdcall,
     tdcall::{accept_page, TdgVeInfo},
-    tdvmcall,
     tdvmcall::{cpuid, hlt, map_gpa, rdmsr, read_mmio, write_mmio, wrmsr, IoSize},
-    TdxVirtualExceptionType,
+    SHARED_MASK, {serial_println, tdcall, tdvmcall, TdxVirtualExceptionType},
 };
-
-use crate::{
-    arch::mm::PageTableFlags,
-    vm::{
-        kspace::KERNEL_PAGE_TABLE,
-        paddr_to_vaddr,
-        page_prop::{CachePolicy, PageProperty, PrivilegedPageFlags as PrivFlags},
-        page_table::PageTableError,
-        KERNEL_BASE_VADDR, KERNEL_END_VADDR, PAGE_SIZE,
-    },
-};
-
-const SHARED_BIT: u8 = 51;
-const SHARED_MASK: u64 = 1u64 << SHARED_BIT;
 
 // Intel TDX guest physical address. Maybe protected(private) gpa or unprotected(shared) gpa.
 pub type TdxGpa = usize;
@@ -108,6 +101,7 @@ pub fn handle_virtual_exception(trapframe: &mut dyn TdxTrapFrame, ve_info: &TdgV
         }
         TdxVirtualExceptionType::MsrWrite => {
             let data = trapframe.rax() as u64 | ((trapframe.rdx() as u64) << 32);
+            // early_println!("MsrWrite: rcx = {:#x}, data = {:#x}", trapframe.rcx(), data);
             unsafe { wrmsr(trapframe.rcx() as u32, data).unwrap() };
         }
         TdxVirtualExceptionType::CpuId => {
@@ -123,7 +117,7 @@ pub fn handle_virtual_exception(trapframe: &mut dyn TdxTrapFrame, ve_info: &TdgV
                 serial_println!("Unexpected EPT-violation on private memory");
                 hlt();
             }
-            instr_len = handle_mmio(trapframe, ve_info).unwrap() as u32;
+            instr_len = handle_mmio(trapframe, &ve_info).unwrap() as u32;
         }
         TdxVirtualExceptionType::Other => {
             serial_println!("Unknown TDX vitrual exception type");
@@ -184,25 +178,25 @@ fn handle_mmio(trapframe: &mut dyn TdxTrapFrame, ve_info: &TdgVeInfo) -> Result<
                         Register::CL => (trapframe.rcx() & 0xFF) as u64,
                         _ => todo!(),
                     };
-                    // SAFETY: The mmio_gpa obtained from `ve_info` is valid, and the value and size parsed from the instruction are valid.
+                    // Safety: The mmio_gpa obtained from `ve_info` is valid, and the value and size parsed from the instruction are valid.
                     unsafe {
                         write_mmio(size, ve_info.guest_physical_address, value)
-                            .map_err(MmioError::TdVmcallError)?
+                            .map_err(|e| MmioError::TdVmcallError(e))?
                     }
                 }
                 InstrMmioType::WriteImm => {
                     let value = instr.immediate(0);
-                    // SAFETY: The mmio_gpa obtained from `ve_info` is valid, and the value and size parsed from the instruction are valid.
+                    // Safety: The mmio_gpa obtained from `ve_info` is valid, and the value and size parsed from the instruction are valid.
                     unsafe {
                         write_mmio(size, ve_info.guest_physical_address, value)
-                            .map_err(MmioError::TdVmcallError)?
+                            .map_err(|e| MmioError::TdVmcallError(e))?
                     }
                 }
                 InstrMmioType::Read =>
-                // SAFETY: The mmio_gpa obtained from `ve_info` is valid, and the size parsed from the instruction is valid.
+                // Safety: The mmio_gpa obtained from `ve_info` is valid, and the size parsed from the instruction is valid.
                 unsafe {
                     let read_res = read_mmio(size, ve_info.guest_physical_address)
-                        .map_err(MmioError::TdVmcallError)?
+                        .map_err(|e| MmioError::TdVmcallError(e))?
                         as usize;
                     match instr.op0_register() {
                         Register::RAX => trapframe.set_rax(read_res),
@@ -294,10 +288,10 @@ fn handle_mmio(trapframe: &mut dyn TdxTrapFrame, ve_info: &TdgVeInfo) -> Result<
                     }
                 },
                 InstrMmioType::ReadZeroExtend =>
-                // SAFETY: The mmio_gpa obtained from `ve_info` is valid, and the size parsed from the instruction is valid.
+                // Safety: The mmio_gpa obtained from `ve_info` is valid, and the size parsed from the instruction is valid.
                 unsafe {
                     let read_res = read_mmio(size, ve_info.guest_physical_address)
-                        .map_err(MmioError::TdVmcallError)?
+                        .map_err(|e| MmioError::TdVmcallError(e))?
                         as usize;
                     match instr.op0_register() {
                         Register::RAX | Register::EAX | Register::AX | Register::AL => {
@@ -325,13 +319,13 @@ fn handle_mmio(trapframe: &mut dyn TdxTrapFrame, ve_info: &TdgVeInfo) -> Result<
 }
 
 fn decode_instr(rip: usize) -> Result<Instruction, MmioError> {
-    if !(KERNEL_BASE_VADDR..KERNEL_END_VADDR).contains(&rip) {
+    if !is_kernel_vaddr(rip) {
         return Err(MmioError::InvalidAddress);
     }
     let code_data = {
         const MAX_X86_INSTR_LEN: usize = 15;
         let mut data = [0u8; MAX_X86_INSTR_LEN];
-        // SAFETY:
+        // Safety:
         // This is safe because we are ensuring that 'rip' is a valid kernel virtual address before this operation.
         // We are also ensuring that the size of the data we are copying does not exceed 'MAX_X86_INSTR_LEN'.
         // Therefore, we are not reading any memory that we shouldn't be, and we are not causing any undefined behavior.
@@ -416,20 +410,21 @@ pub unsafe fn unprotect_gpa_range(gpa: TdxGpa, page_num: usize) -> Result<(), Pa
         warn!("Misaligned address: {:x}", gpa);
     }
     let vaddr = paddr_to_vaddr(gpa);
-    let pt = KERNEL_PAGE_TABLE.get().unwrap();
-    pt.protect(&(vaddr..page_num * PAGE_SIZE), |prop| {
-        prop = PageProperty {
-            flags: prop.flags,
-            cache: prop.cache,
-            priv_flags: prop.priv_flags | PrivFlags::SHARED,
+    let mut pt = KERNEL_PAGE_TABLE.get().unwrap().lock();
+    unsafe {
+        for i in 0..page_num {
+            pt.protect(
+                vaddr + (i * PAGE_SIZE),
+                PageTableFlags::SHARED | PageTableFlags::WRITABLE | PageTableFlags::PRESENT,
+            )
+            .map_err(|e| PageConvertError::PageTableError(e))?;
         }
-    })
-    .map_err(PageConvertError::PageTableError)?;
+    };
     map_gpa(
         (gpa & (!PAGE_MASK)) as u64 | SHARED_MASK,
         (page_num * PAGE_SIZE) as u64,
     )
-    .map_err(PageConvertError::TdVmcallError)
+    .map_err(|e| PageConvertError::TdVmcallError(e))
 }
 
 /// Sets the given physical address range to Intel TDX private pages.
@@ -452,20 +447,22 @@ pub unsafe fn protect_gpa_range(gpa: TdxGpa, page_num: usize) -> Result<(), Page
         warn!("Misaligned address: {:x}", gpa);
     }
     let vaddr = paddr_to_vaddr(gpa);
-    let pt = KERNEL_PAGE_TABLE.get().unwrap();
-    pt.protect(&(vaddr..page_num * PAGE_SIZE), |prop| {
-        prop = PageProperty {
-            flags: prop.flags,
-            cache: prop.cache,
-            priv_flags: prop.priv_flags - PrivFlags::SHARED,
+    let mut pt = KERNEL_PAGE_TABLE.get().unwrap().lock();
+    unsafe {
+        for i in 0..page_num {
+            pt.protect(
+                vaddr + (i * PAGE_SIZE),
+                PageTableFlags::WRITABLE | PageTableFlags::PRESENT,
+            )
+            .map_err(|e| PageConvertError::PageTableError(e))?;
         }
-    })
-    .map_err(PageConvertError::PageTableError)?;
+    };
     map_gpa((gpa & PAGE_MASK) as u64, (page_num * PAGE_SIZE) as u64)
-        .map_err(PageConvertError::TdVmcallError)?;
+        .map_err(|e| PageConvertError::TdVmcallError(e))?;
     for i in 0..page_num {
         unsafe {
-            accept_page(0, (gpa + i * PAGE_SIZE) as u64).map_err(PageConvertError::TdCallError)?;
+            accept_page(0, (gpa + i * PAGE_SIZE) as u64)
+                .map_err(|e| PageConvertError::TdCallError(e))?;
         }
     }
     Ok(())

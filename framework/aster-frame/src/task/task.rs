@@ -1,23 +1,20 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::cell::UnsafeCell;
+use crate::arch::mm::PageTableFlags;
+use crate::config::{KERNEL_STACK_SIZE, PAGE_SIZE};
+use crate::cpu::CpuSet;
+use crate::prelude::*;
+use crate::sync::{Mutex, MutexGuard};
+use crate::user::UserSpace;
+use crate::vm::page_table::KERNEL_PAGE_TABLE;
+use crate::vm::{VmAllocOptions, VmSegment};
 
-use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
+use intrusive_collections::intrusive_adapter;
+use intrusive_collections::LinkedListAtomicLink;
 
-use super::{
-    add_task,
-    priority::Priority,
-    processor::{current_task, schedule},
-};
-use crate::{
-    cpu::CpuSet,
-    prelude::*,
-    sync::{SpinLock, SpinLockGuard},
-    user::UserSpace,
-    vm::{kspace::KERNEL_PAGE_TABLE, PageFlags, VmAllocOptions, VmSegment, PAGE_SIZE},
-};
-
-pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 64;
+use super::add_task;
+use super::priority::Priority;
+use super::processor::{current_task, schedule};
 
 core::arch::global_asm!(include_str!("switch.S"));
 
@@ -46,96 +43,81 @@ extern "C" {
 
 pub struct KernelStack {
     segment: VmSegment,
-    has_guard_page: bool,
+    old_guard_page_flag: Option<PageTableFlags>,
 }
 
 impl KernelStack {
     pub fn new() -> Result<Self> {
         Ok(Self {
-            segment: VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE).alloc_contiguous()?,
-            has_guard_page: false,
+            segment: VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE)
+                .is_contiguous(true)
+                .alloc_contiguous()?,
+            old_guard_page_flag: None,
         })
     }
 
     /// Generate a kernel stack with a guard page.
     /// An additional page is allocated and be regarded as a guard page, which should not be accessed.  
     pub fn new_with_guard_page() -> Result<Self> {
-        let stack_segment =
-            VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE + 1).alloc_contiguous()?;
-        // FIXME: modifying the the linear mapping is bad.
-        let page_table = KERNEL_PAGE_TABLE.get().unwrap();
-        let guard_page_vaddr = {
-            let guard_page_paddr = stack_segment.start_paddr();
-            crate::vm::paddr_to_vaddr(guard_page_paddr)
-        };
-        // SAFETY: the segment allocated is not used by others so we can protect it.
-        unsafe {
-            page_table
-                .protect(&(guard_page_vaddr..guard_page_vaddr + PAGE_SIZE), |p| {
-                    p.flags -= PageFlags::RW
-                })
-                .unwrap();
-        }
+        let stack_segment = VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE + 1)
+            .is_contiguous(true)
+            .alloc_contiguous()?;
+        let unpresent_flag = PageTableFlags::empty();
+        let old_guard_page_flag = Self::protect_guard_page(&stack_segment, unpresent_flag);
         Ok(Self {
             segment: stack_segment,
-            has_guard_page: true,
+            old_guard_page_flag: Some(old_guard_page_flag),
         })
     }
 
     pub fn end_paddr(&self) -> Paddr {
         self.segment.end_paddr()
     }
+
+    pub fn has_guard_page(&self) -> bool {
+        self.old_guard_page_flag.is_some()
+    }
+
+    fn protect_guard_page(stack_segment: &VmSegment, flags: PageTableFlags) -> PageTableFlags {
+        let mut kernel_pt = KERNEL_PAGE_TABLE.get().unwrap().lock();
+        let guard_page_vaddr = {
+            let guard_page_paddr = stack_segment.start_paddr();
+            crate::vm::paddr_to_vaddr(guard_page_paddr)
+        };
+        // Safety: The protected address must be the address of guard page hence it should be safe and valid.
+        unsafe { kernel_pt.protect(guard_page_vaddr, flags).unwrap() }
+    }
 }
 
 impl Drop for KernelStack {
     fn drop(&mut self) {
-        if self.has_guard_page {
-            // FIXME: modifying the the linear mapping is bad.
-            let page_table = KERNEL_PAGE_TABLE.get().unwrap();
-            let guard_page_vaddr = {
-                let guard_page_paddr = self.segment.start_paddr();
-                crate::vm::paddr_to_vaddr(guard_page_paddr)
-            };
-            // SAFETY: the segment allocated is not used by others so we can protect it.
-            unsafe {
-                page_table
-                    .protect(&(guard_page_vaddr..guard_page_vaddr + PAGE_SIZE), |p| {
-                        p.flags |= PageFlags::RW
-                    })
-                    .unwrap();
-            }
+        if self.has_guard_page() {
+            Self::protect_guard_page(&self.segment, self.old_guard_page_flag.unwrap());
         }
     }
 }
 
 /// A task that executes a function to the end.
-///
-/// Each task is associated with per-task data and an optional user space.
-/// If having a user space, the task can switch to the user space to
-/// execute user code. Multiple tasks can share a single user space.
 pub struct Task {
     func: Box<dyn Fn() + Send + Sync>,
     data: Box<dyn Any + Send + Sync>,
     user_space: Option<Arc<UserSpace>>,
-    task_inner: SpinLock<TaskInner>,
-    ctx: UnsafeCell<TaskContext>,
+    task_inner: Mutex<TaskInner>,
+    exit_code: usize,
     /// kernel stack, note that the top is SyscallFrame/TrapFrame
     kstack: KernelStack,
     link: LinkedListAtomicLink,
     priority: Priority,
-    // TODO: add multiprocessor support
+    // TODO:: add multiprocessor support
     cpu_affinity: CpuSet,
 }
 
 // TaskAdapter struct is implemented for building relationships between doubly linked list and Task struct
 intrusive_adapter!(pub TaskAdapter = Arc<Task>: Task { link: LinkedListAtomicLink });
 
-// SAFETY: `UnsafeCell<TaskContext>` is not `Sync`. However, we only use it in `schedule()` where
-// we have exclusive access to the field.
-unsafe impl Sync for Task {}
-
 pub(crate) struct TaskInner {
     pub task_status: TaskStatus,
+    pub ctx: TaskContext,
 }
 
 impl Task {
@@ -145,12 +127,13 @@ impl Task {
     }
 
     /// get inner
-    pub(crate) fn inner_exclusive_access(&self) -> SpinLockGuard<TaskInner> {
-        self.task_inner.lock_irq_disabled()
+    pub(crate) fn inner_exclusive_access(&self) -> MutexGuard<'_, TaskInner> {
+        self.task_inner.lock()
     }
 
-    pub(super) fn ctx(&self) -> &UnsafeCell<TaskContext> {
-        &self.ctx
+    /// get inner
+    pub(crate) fn inner_ctx(&self) -> TaskContext {
+        self.task_inner.lock().ctx
     }
 
     /// Yields execution so that another task may be scheduled.
@@ -161,7 +144,6 @@ impl Task {
         schedule();
     }
 
-    /// Runs the task.
     pub fn run(self: &Arc<Self>) {
         add_task(self.clone());
         schedule();
@@ -169,7 +151,7 @@ impl Task {
 
     /// Returns the task status.
     pub fn status(&self) -> TaskStatus {
-        self.task_inner.lock_irq_disabled().task_status
+        self.task_inner.lock().task_status
     }
 
     /// Returns the task data.
@@ -197,14 +179,12 @@ impl Task {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// The status of a task.
 pub enum TaskStatus {
     /// The task is runnable.
     Runnable,
-    /// The task is running in the foreground but will sleep when it goes to the background.
-    Sleepy,
-    /// The task is sleeping in the background.
+    /// The task is sleeping.
     Sleeping,
     /// The task has exited.
     Exited,
@@ -268,73 +248,75 @@ impl TaskOptions {
         self
     }
 
-    /// Build a new task without running it immediately.
+    /// Builds a new task but not run it immediately.
     pub fn build(self) -> Result<Arc<Task>> {
         /// all task will entering this function
         /// this function is mean to executing the task_fn in Task
-        extern "sysv64" fn kernel_task_entry() {
+        fn kernel_task_entry() {
             let current_task = current_task()
                 .expect("no current task, it should have current task in kernel task entry");
             current_task.func.call(());
             current_task.exit();
         }
-
-        let mut new_task = Task {
+        let result = Task {
             func: self.func.unwrap(),
             data: self.data.unwrap(),
             user_space: self.user_space,
-            task_inner: SpinLock::new(TaskInner {
+            task_inner: Mutex::new(TaskInner {
                 task_status: TaskStatus::Runnable,
+                ctx: TaskContext::default(),
             }),
-            ctx: UnsafeCell::new(TaskContext::default()),
+            exit_code: 0,
             kstack: KernelStack::new_with_guard_page()?,
             link: LinkedListAtomicLink::new(),
             priority: self.priority,
             cpu_affinity: self.cpu_affinity,
         };
 
-        let ctx = new_task.ctx.get_mut();
-        ctx.rip = kernel_task_entry as usize;
-        // We should reserve space for the return address in the stack, otherwise
-        // we will write across the page boundary due to the implementation of
-        // the context switch.
-        //
-        // According to the System V AMD64 ABI, the stack pointer should be aligned
-        // to at least 16 bytes. And a larger alignment is needed if larger arguments
-        // are passed to the function. The `kernel_task_entry` function does not
-        // have any arguments, so we only need to align the stack pointer to 16 bytes.
-        ctx.regs.rsp = (crate::vm::paddr_to_vaddr(new_task.kstack.end_paddr() - 16)) as u64;
+        result.task_inner.lock().task_status = TaskStatus::Runnable;
+        result.task_inner.lock().ctx.rip = kernel_task_entry as usize;
+        result.task_inner.lock().ctx.regs.rsp =
+            (crate::vm::paddr_to_vaddr(result.kstack.end_paddr())) as u64;
 
-        Ok(Arc::new(new_task))
+        Ok(Arc::new(result))
     }
 
-    /// Build a new task and run it immediately.
+    /// Builds a new task and run it immediately.
+    ///
+    /// Each task is associated with a per-task data and an optional user space.
+    /// If having a user space, then the task can switch to the user space to
+    /// execute user code. Multiple tasks can share a single user space.
     pub fn spawn(self) -> Result<Arc<Task>> {
-        let task = self.build()?;
-        task.run();
-        Ok(task)
-    }
-}
-
-#[cfg(ktest)]
-mod test {
-    #[ktest]
-    fn create_task() {
-        let task = || {
-            assert_eq!(1, 1);
+        /// all task will entering this function
+        /// this function is mean to executing the task_fn in Task
+        fn kernel_task_entry() {
+            let current_task = current_task()
+                .expect("no current task, it should have current task in kernel task entry");
+            current_task.func.call(());
+            current_task.exit();
+        }
+        let result = Task {
+            func: self.func.unwrap(),
+            data: self.data.unwrap(),
+            user_space: self.user_space,
+            task_inner: Mutex::new(TaskInner {
+                task_status: TaskStatus::Runnable,
+                ctx: TaskContext::default(),
+            }),
+            exit_code: 0,
+            kstack: KernelStack::new_with_guard_page()?,
+            link: LinkedListAtomicLink::new(),
+            priority: self.priority,
+            cpu_affinity: self.cpu_affinity,
         };
-        let task_option = crate::task::TaskOptions::new(task)
-            .data(())
-            .build()
-            .unwrap();
-        task_option.run();
-    }
 
-    #[ktest]
-    fn spawn_task() {
-        let task = || {
-            assert_eq!(1, 1);
-        };
-        let _ = crate::task::TaskOptions::new(task).data(()).spawn();
+        result.task_inner.lock().task_status = TaskStatus::Runnable;
+        result.task_inner.lock().ctx.rip = kernel_task_entry as usize;
+        result.task_inner.lock().ctx.regs.rsp =
+            (crate::vm::paddr_to_vaddr(result.kstack.end_paddr())) as u64;
+
+        let arc_self = Arc::new(result);
+        arc_self.run();
+        Ok(arc_self)
     }
 }

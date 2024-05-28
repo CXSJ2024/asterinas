@@ -2,9 +2,9 @@
 
 //! CPU.
 
-use core::{cell::UnsafeCell, ops::Deref};
-
 use crate::trap::disable_local;
+use core::cell::UnsafeCell;
+use core::ops::Deref;
 
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "x86_64")]{
@@ -39,14 +39,14 @@ macro_rules! cpu_local {
 
     // multiple declarations
     ($(#[$attr:meta])* $vis:vis static $name:ident: $t:ty = $init:expr; $($rest:tt)*) => {
-        $(#[$attr])* $vis static $name: $crate::CpuLocal<$t> = unsafe { $crate::CpuLocal::new($init) };
+        $(#[$attr])* $vis static $name: CpuLocal<$t> = unsafe { CpuLocal::new($init) };
         $crate::cpu_local!($($rest)*);
     };
 
     // single declaration
     ($(#[$attr:meta])* $vis:vis static $name:ident: $t:ty = $init:expr) => (
         // TODO: reimplement cpu-local variable to support multi-core
-        $(#[$attr])* $vis static $name: $crate::CpuLocal<$t> = $crate::CpuLocal::new($init);
+        $(#[$attr])* $vis static $name: CpuLocal<$t> = CpuLocal::new($init);
     );
 }
 
@@ -62,7 +62,7 @@ macro_rules! cpu_local {
 /// TODO: re-implement `CpuLocal`
 pub struct CpuLocal<T>(UnsafeCell<T>);
 
-// SAFETY: At any given time, only one task can access the inner value T of a cpu-local variable.
+// Safety. At any given time, only one task can access the inner value T of a cpu-local variable.
 unsafe impl<T> Sync for CpuLocal<T> {}
 
 impl<T> CpuLocal<T> {
@@ -78,11 +78,11 @@ impl<T> CpuLocal<T> {
     /// During the execution of the closure, local IRQs are disabled. This ensures that
     /// the CPU-local object is only accessed by the current task or IRQ handler.
     /// As local IRQs are disabled, one should keep the closure as short as possible.
-    pub fn borrow_with<'a, U, F: FnOnce(&'a T) -> U>(this: &'a Self, f: F) -> U {
+    pub fn borrow_with<U, F: FnOnce(&T) -> U>(this: &Self, f: F) -> U {
         // FIXME: implement disable preemption
         // Disable interrupts when accessing cpu-local variable
         let _guard = disable_local();
-        // SAFETY: Now that the local IRQs are disabled, this CPU-local object can only be
+        // Safety. Now that the local IRQs are disabled, this CPU-local object can only be
         // accessed by the current task/thread. So it is safe to get its immutable reference
         // regardless of whether `T` implements `Sync` or not.
         let val_ref = unsafe { this.do_borrow() };

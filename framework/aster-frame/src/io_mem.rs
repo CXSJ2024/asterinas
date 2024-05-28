@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use core::{mem::size_of, ops::Range};
-
 use pod::Pod;
 
 use crate::{
-    vm::{kspace::LINEAR_MAPPING_BASE_VADDR, paddr_to_vaddr, HasPaddr, Paddr, Vaddr, VmIo},
+    vm::{paddr_to_vaddr, HasPaddr, Paddr, Vaddr, VmIo},
     Error, Result,
 };
 
@@ -19,7 +18,7 @@ impl VmIo for IoMem {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> crate::Result<()> {
         self.check_range(offset, buf.len())?;
         unsafe {
-            crate::arch::mm::fast_copy(
+            core::ptr::copy(
                 (self.virtual_address + offset) as *const u8,
                 buf.as_mut_ptr(),
                 buf.len(),
@@ -31,7 +30,7 @@ impl VmIo for IoMem {
     fn write_bytes(&self, offset: usize, buf: &[u8]) -> crate::Result<()> {
         self.check_range(offset, buf.len())?;
         unsafe {
-            crate::arch::mm::fast_copy(
+            core::ptr::copy(
                 buf.as_ptr(),
                 (self.virtual_address + offset) as *mut u8,
                 buf.len(),
@@ -54,14 +53,14 @@ impl VmIo for IoMem {
 
 impl HasPaddr for IoMem {
     fn paddr(&self) -> Paddr {
-        self.virtual_address - LINEAR_MAPPING_BASE_VADDR
+        crate::vm::vaddr_to_paddr(self.virtual_address).unwrap()
     }
 }
 
 impl IoMem {
     /// # Safety
     ///
-    /// User must ensure the given physical range is in the I/O memory region.
+    /// User must ensure the range is in the I/O memory region.
     pub(crate) unsafe fn new(range: Range<Paddr>) -> IoMem {
         IoMem {
             virtual_address: paddr_to_vaddr(range.start),
@@ -70,7 +69,7 @@ impl IoMem {
     }
 
     pub fn paddr(&self) -> Paddr {
-        self.virtual_address - LINEAR_MAPPING_BASE_VADDR
+        crate::vm::vaddr_to_paddr(self.virtual_address).unwrap()
     }
 
     pub fn length(&self) -> usize {
@@ -79,17 +78,11 @@ impl IoMem {
 
     pub fn resize(&mut self, range: Range<Paddr>) -> Result<()> {
         let start_vaddr = paddr_to_vaddr(range.start);
-        let virtual_end = self
-            .virtual_address
-            .checked_add(self.limit)
-            .ok_or(Error::Overflow)?;
-        if start_vaddr < self.virtual_address || start_vaddr >= virtual_end {
+        if start_vaddr < self.virtual_address || start_vaddr >= self.virtual_address + self.limit {
             return Err(Error::InvalidArgs);
         }
-        let end_vaddr = start_vaddr
-            .checked_add(range.len())
-            .ok_or(Error::Overflow)?;
-        if end_vaddr <= self.virtual_address || end_vaddr > virtual_end {
+        let end_vaddr = start_vaddr + range.len();
+        if end_vaddr <= self.virtual_address || end_vaddr > self.virtual_address + self.limit {
             return Err(Error::InvalidArgs);
         }
         self.virtual_address = start_vaddr;

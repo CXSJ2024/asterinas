@@ -1,30 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
-mod util;
-
-use alloc::fmt;
-
+use crate::sync::Mutex;
+use alloc::{collections::BTreeMap, fmt};
 use pod::Pod;
-pub use util::{fast_copy, fast_copy_nonoverlapping};
 use x86_64::{instructions::tlb, structures::paging::PhysFrame, VirtAddr};
 
-use crate::vm::{
-    page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
-    page_table::PageTableEntryTrait,
-    Paddr, PagingConstsTrait, Vaddr,
+use crate::{
+    config::ENTRY_COUNT,
+    vm::{
+        page_table::{table_of, PageTableEntryTrait, PageTableFlagsTrait},
+        Paddr, Vaddr,
+    },
 };
-
-pub(crate) const NR_ENTRIES_PER_PAGE: usize = 512;
-
-#[derive(Debug)]
-pub struct PagingConsts {}
-
-impl PagingConstsTrait for PagingConsts {
-    const BASE_PAGE_SIZE: usize = 4096;
-    const NR_LEVELS: usize = 4;
-    const HIGHEST_TRANSLATION_LEVEL: usize = 2;
-    const PTE_SIZE: usize = core::mem::size_of::<PageTableEntry>();
-}
 
 bitflags::bitflags! {
     #[derive(Pod)]
@@ -52,7 +39,6 @@ bitflags::bitflags! {
         /// the TLB on an address space switch.
         const GLOBAL =          1 << 8;
         /// TDX shared bit.
-        #[cfg(feature = "intel_tdx")]
         const SHARED =          1 << 51;
         /// Forbid execute codes on the page. The NXE bits in EFER msr must be set.
         const NO_EXECUTE =      1 << 63;
@@ -63,182 +49,171 @@ pub fn tlb_flush(vaddr: Vaddr) {
     tlb::flush(VirtAddr::new(vaddr as u64));
 }
 
-pub fn tlb_flush_all_including_global() {
-    // SAFETY: updates to CR4 here only change the global-page bit, the side effect
-    // is only to invalidate the TLB, which doesn't affect the memory safety.
-    unsafe {
-        // To invalidate all entries, including global-page
-        // entries, disable global-page extensions (CR4.PGE=0).
-        x86_64::registers::control::Cr4::update(|cr4| {
-            *cr4 -= x86_64::registers::control::Cr4Flags::PAGE_GLOBAL;
-        });
-        x86_64::registers::control::Cr4::update(|cr4| {
-            *cr4 |= x86_64::registers::control::Cr4Flags::PAGE_GLOBAL;
-        });
-    }
+pub const fn is_user_vaddr(vaddr: Vaddr) -> bool {
+    // FIXME: Support 3/5 level page table.
+    // 47 = 12(offset) + 4 * 9(index) - 1
+    (vaddr >> 47) == 0
+}
+
+pub const fn is_kernel_vaddr(vaddr: Vaddr) -> bool {
+    // FIXME: Support 3/5 level page table.
+    // 47 = 12(offset) + 4 * 9(index) - 1
+    ((vaddr >> 47) & 0x1) == 1
 }
 
 #[derive(Clone, Copy, Pod)]
 #[repr(C)]
 pub struct PageTableEntry(usize);
 
-/// Activate the given level 4 page table.
-/// The cache policy of the root page table frame is controlled by `root_pt_cache`.
-///
 /// ## Safety
 ///
 /// Changing the level 4 page table is unsafe, because it's possible to violate memory safety by
 /// changing the page mapping.
-pub unsafe fn activate_page_table(root_paddr: Paddr, root_pt_cache: CachePolicy) {
+pub unsafe fn activate_page_table(root_paddr: Paddr, flags: x86_64::registers::control::Cr3Flags) {
     x86_64::registers::control::Cr3::write(
         PhysFrame::from_start_address(x86_64::PhysAddr::new(root_paddr as u64)).unwrap(),
-        match root_pt_cache {
-            CachePolicy::Writeback => x86_64::registers::control::Cr3Flags::empty(),
-            CachePolicy::Writethrough => {
-                x86_64::registers::control::Cr3Flags::PAGE_LEVEL_WRITETHROUGH
-            }
-            CachePolicy::Uncacheable => {
-                x86_64::registers::control::Cr3Flags::PAGE_LEVEL_CACHE_DISABLE
-            }
-            _ => panic!("unsupported cache policy for the root page table"),
-        },
+        flags,
     );
 }
 
-pub fn current_page_table_paddr() -> Paddr {
-    x86_64::registers::control::Cr3::read()
-        .0
-        .start_address()
-        .as_u64() as Paddr
+pub static ALL_MAPPED_PTE: Mutex<BTreeMap<usize, PageTableEntry>> = Mutex::new(BTreeMap::new());
+
+pub fn init() {
+    let (page_directory_base, _) = x86_64::registers::control::Cr3::read();
+    let page_directory_base = page_directory_base.start_address().as_u64() as usize;
+
+    // Safety: page_directory_base is read from Cr3, the address is valid.
+    let p4 = unsafe { table_of::<PageTableEntry>(page_directory_base).unwrap() };
+    // Cancel mapping in lowest addresses.
+    p4[0].clear();
+    let mut map_pte = ALL_MAPPED_PTE.lock();
+    for (i, p4_i) in p4.iter().enumerate().take(512) {
+        if p4_i.flags().contains(PageTableFlags::PRESENT) {
+            map_pte.insert(i, *p4_i);
+        }
+    }
 }
 
-impl PageTableEntry {
-    /// 51:12
-    #[cfg(not(feature = "intel_tdx"))]
-    const PHYS_ADDR_MASK: usize = 0xF_FFFF_FFFF_F000;
-    #[cfg(feature = "intel_tdx")]
-    const PHYS_ADDR_MASK: usize = 0x7_FFFF_FFFF_F000;
-}
+impl PageTableFlagsTrait for PageTableFlags {
+    fn new() -> Self {
+        Self::empty()
+    }
 
-/// Parse a bit-flag bits `val` in the representation of `from` to `to` in bits.
-macro_rules! parse_flags {
-    ($val:expr, $from:expr, $to:expr) => {
-        ($val as usize & $from.bits() as usize) >> $from.bits().ilog2() << $to.bits().ilog2()
-    };
-}
+    fn set_present(mut self, present: bool) -> Self {
+        self.set(Self::PRESENT, present);
+        self
+    }
 
-impl PageTableEntryTrait for PageTableEntry {
-    fn new_absent() -> Self {
-        Self(0)
+    fn set_writable(mut self, writable: bool) -> Self {
+        self.set(Self::WRITABLE, writable);
+        self
+    }
+
+    fn set_readable(self, readable: bool) -> Self {
+        // do nothing
+        self
+    }
+
+    fn set_accessible_by_user(mut self, accessible: bool) -> Self {
+        self.set(Self::USER, accessible);
+        self
     }
 
     fn is_present(&self) -> bool {
-        self.0 & PageTableFlags::PRESENT.bits() != 0
+        self.contains(Self::PRESENT)
     }
 
-    fn new(paddr: Paddr, prop: PageProperty, huge: bool, last: bool) -> Self {
-        let mut flags =
-            PageTableFlags::PRESENT.bits() | (huge as usize) << PageTableFlags::HUGE.bits().ilog2();
-        if !huge && !last {
-            // In x86 if it's an intermediate PTE, it's better to have the same permissions
-            // as the most permissive child (to reduce hardware page walk accesses). But we
-            // don't have a mechanism to keep it generic across architectures, thus just
-            // setting it to be the most permissive.
-            flags |= PageTableFlags::WRITABLE.bits() | PageTableFlags::USER.bits();
-            #[cfg(feature = "intel_tdx")]
-            {
-                flags |= parse_flags!(
-                    prop.priv_flags.bits(),
-                    PrivFlags::SHARED,
-                    PageTableFlags::SHARED
-                );
-            }
-        } else {
-            flags |= parse_flags!(prop.flags.bits(), PageFlags::W, PageTableFlags::WRITABLE)
-                | parse_flags!(!prop.flags.bits(), PageFlags::X, PageTableFlags::NO_EXECUTE)
-                | parse_flags!(
-                    prop.flags.bits(),
-                    PageFlags::ACCESSED,
-                    PageTableFlags::ACCESSED
-                )
-                | parse_flags!(prop.flags.bits(), PageFlags::DIRTY, PageTableFlags::DIRTY)
-                | parse_flags!(
-                    prop.priv_flags.bits(),
-                    PrivFlags::USER,
-                    PageTableFlags::USER
-                )
-                | parse_flags!(
-                    prop.priv_flags.bits(),
-                    PrivFlags::GLOBAL,
-                    PageTableFlags::GLOBAL
-                );
-            #[cfg(feature = "intel_tdx")]
-            {
-                flags |= parse_flags!(
-                    prop.priv_flags.bits(),
-                    PrivFlags::SHARED,
-                    PageTableFlags::SHARED
-                );
-            }
-        }
-        match prop.cache {
-            CachePolicy::Writeback => {}
-            CachePolicy::Writethrough => {
-                flags |= PageTableFlags::WRITE_THROUGH.bits();
-            }
-            CachePolicy::Uncacheable => {
-                flags |= PageTableFlags::NO_CACHE.bits();
-            }
-            _ => panic!("unsupported cache policy"),
-        }
-        Self(paddr & Self::PHYS_ADDR_MASK | flags)
+    fn writable(&self) -> bool {
+        self.contains(Self::WRITABLE)
     }
 
-    fn paddr(&self) -> Paddr {
-        self.0 & Self::PHYS_ADDR_MASK
+    fn readable(&self) -> bool {
+        // always true
+        true
     }
 
-    fn prop(&self) -> PageProperty {
-        let flags = parse_flags!(self.0, PageTableFlags::PRESENT, PageFlags::R)
-            | parse_flags!(self.0, PageTableFlags::WRITABLE, PageFlags::W)
-            | parse_flags!(!self.0, PageTableFlags::NO_EXECUTE, PageFlags::X)
-            | parse_flags!(self.0, PageTableFlags::ACCESSED, PageFlags::ACCESSED)
-            | parse_flags!(self.0, PageTableFlags::DIRTY, PageFlags::DIRTY);
-        let priv_flags = parse_flags!(self.0, PageTableFlags::USER, PrivFlags::USER)
-            | parse_flags!(self.0, PageTableFlags::GLOBAL, PrivFlags::GLOBAL);
-        #[cfg(feature = "intel_tdx")]
-        let priv_flags =
-            priv_flags | parse_flags!(self.0, PageTableFlags::SHARED, PrivFlags::SHARED);
-        let cache = if self.0 & PageTableFlags::NO_CACHE.bits() != 0 {
-            CachePolicy::Uncacheable
-        } else if self.0 & PageTableFlags::WRITE_THROUGH.bits() != 0 {
-            CachePolicy::Writethrough
-        } else {
-            CachePolicy::Writeback
-        };
-        PageProperty {
-            flags: PageFlags::from_bits(flags as u8).unwrap(),
-            cache,
-            priv_flags: PrivFlags::from_bits(priv_flags as u8).unwrap(),
-        }
+    fn accessible_by_user(&self) -> bool {
+        self.contains(Self::USER)
+    }
+
+    fn set_executable(mut self, executable: bool) -> Self {
+        self.set(Self::NO_EXECUTE, !executable);
+        self
+    }
+
+    fn executable(&self) -> bool {
+        !self.contains(Self::NO_EXECUTE)
+    }
+
+    fn has_accessed(&self) -> bool {
+        self.contains(Self::ACCESSED)
+    }
+
+    fn is_dirty(&self) -> bool {
+        self.contains(Self::DIRTY)
+    }
+
+    fn union(&self, flags: &Self) -> Self {
+        (*self).union(*flags)
+    }
+
+    fn remove(&mut self, flags: &Self) {
+        self.remove(*flags)
+    }
+
+    fn insert(&mut self, flags: &Self) {
+        self.insert(*flags)
     }
 
     fn is_huge(&self) -> bool {
-        self.0 & PageTableFlags::HUGE.bits() != 0
+        self.contains(Self::HUGE)
+    }
+
+    fn set_huge(mut self, huge: bool) -> Self {
+        self.set(Self::HUGE, huge);
+        self
+    }
+}
+
+impl PageTableEntry {
+    const PHYS_ADDR_MASK: usize = 0x7_FFFF_FFFF_F000;
+}
+
+impl PageTableEntryTrait for PageTableEntry {
+    type F = PageTableFlags;
+    fn new(paddr: Paddr, flags: PageTableFlags) -> Self {
+        Self((paddr & Self::PHYS_ADDR_MASK) | flags.bits)
+    }
+    fn paddr(&self) -> Paddr {
+        self.0 & Self::PHYS_ADDR_MASK
+    }
+    fn flags(&self) -> PageTableFlags {
+        PageTableFlags::from_bits_truncate(self.0)
+    }
+    fn is_used(&self) -> bool {
+        self.0 != 0
+    }
+
+    fn update(&mut self, paddr: Paddr, flags: Self::F) {
+        self.0 = (paddr & Self::PHYS_ADDR_MASK) | flags.bits;
+    }
+
+    fn clear(&mut self) {
+        self.0 = 0;
+    }
+
+    fn page_index(va: crate::vm::Vaddr, level: usize) -> usize {
+        debug_assert!((1..=5).contains(&level));
+        va >> (12 + 9 * (level - 1)) & (ENTRY_COUNT - 1)
     }
 }
 
 impl fmt::Debug for PageTableEntry {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut f = f.debug_struct("PageTableEntry");
-        f.field("raw", &format_args!("{:#x}", self.0))
-            .field("paddr", &format_args!("{:#x}", self.paddr()))
-            .field("present", &self.is_present())
-            .field(
-                "flags",
-                &PageTableFlags::from_bits_truncate(self.0 & !Self::PHYS_ADDR_MASK),
-            )
-            .field("prop", &self.prop())
+        f.field("raw", &self.0)
+            .field("paddr", &self.paddr())
+            .field("flags", &self.flags())
             .finish()
     }
 }

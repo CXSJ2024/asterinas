@@ -1,25 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use crate::arch::mm::PageTableFlags;
+use crate::config::PAGE_SIZE;
+use crate::sync::Mutex;
+use bitflags::bitflags;
 use core::ops::Range;
 
-use align_ext::AlignExt;
+use super::VmFrameVec;
+use super::{is_page_aligned, Vaddr};
+use super::{MapArea, MemorySet};
+use crate::{prelude::*, Error};
 
-use super::{
-    is_page_aligned,
-    kspace::KERNEL_PAGE_TABLE,
-    page_table::{PageTable, PageTableMode, UserMode},
-    CachePolicy, PageFlags, PageProperty, PagingConstsTrait, PrivilegedPageFlags, VmFrameVec, VmIo,
-    PAGE_SIZE,
-};
-use crate::{
-    arch::mm::{PageTableEntry, PagingConsts},
-    prelude::*,
-    vm::{
-        page_table::{Cursor, PageTableQueryResult as PtQr},
-        VmFrame, MAX_USERSPACE_VADDR,
-    },
-    Error,
-};
+use super::VmIo;
 
 /// Virtual memory space.
 ///
@@ -31,94 +23,66 @@ use crate::{
 ///
 /// A newly-created `VmSpace` is not backed by any physical memory pages.
 /// To provide memory pages for a `VmSpace`, one can allocate and map
-/// physical memory (`VmFrame`s) to the `VmSpace`.
-#[derive(Debug)]
+/// physical memory (`VmFrames`) to the `VmSpace`.
+
+#[derive(Debug, Clone)]
 pub struct VmSpace {
-    pt: PageTable<UserMode>,
+    memory_set: Arc<Mutex<MemorySet>>,
 }
 
 impl VmSpace {
     /// Creates a new VM address space.
     pub fn new() -> Self {
         Self {
-            pt: KERNEL_PAGE_TABLE.get().unwrap().create_user_page_table(),
+            memory_set: Arc::new(Mutex::new(MemorySet::new())),
         }
     }
-    /// Activate the page table.
-    pub(crate) fn activate(&self) {
-        self.pt.activate();
+    /// Activate the page table, load root physical address to cr3
+    #[allow(clippy::missing_safety_doc)]
+    pub unsafe fn activate(&self) {
+        #[cfg(target_arch = "x86_64")]
+        crate::arch::x86::mm::activate_page_table(
+            self.memory_set.lock().pt.root_paddr(),
+            x86_64::registers::control::Cr3Flags::PAGE_LEVEL_CACHE_DISABLE,
+        );
     }
 
     /// Maps some physical memory pages into the VM space according to the given
     /// options, returning the address where the mapping is created.
     ///
-    /// The ownership of the frames will be transferred to the `VmSpace`.
+    /// the frames in variable frames will delete after executing this function
     ///
     /// For more information, see `VmMapOptions`.
     pub fn map(&self, frames: VmFrameVec, options: &VmMapOptions) -> Result<Vaddr> {
+        let flags = PageTableFlags::from(options.perm);
         if options.addr.is_none() {
             return Err(Error::InvalidArgs);
         }
 
-        let addr = options.addr.unwrap();
+        // if can overwrite, the old mapping should be unmapped.
+        if options.can_overwrite {
+            let addr = options.addr.unwrap();
+            let size = frames.nbytes();
+            let _ = self.unmap(&(addr..addr + size));
+        }
+        // debug!("map to vm space: 0x{:x}", options.addr.unwrap());
 
-        if addr % PAGE_SIZE != 0 {
-            return Err(Error::InvalidArgs);
+        let mut memory_set = self.memory_set.lock();
+        // FIXME: This is only a hack here. The interface of MapArea cannot simply deal with unmap part of memory,
+        // so we only map MapArea of page size now.
+        for (idx, frame) in frames.into_iter().enumerate() {
+            let addr = options.addr.unwrap() + idx * PAGE_SIZE;
+            let frames = VmFrameVec::from_one_frame(frame);
+            memory_set.map(MapArea::new(addr, PAGE_SIZE, flags, frames));
         }
 
-        let size = frames.nbytes();
-        let end = addr.checked_add(size).ok_or(Error::InvalidArgs)?;
-
-        let va_range = addr..end;
-        if !UserMode::covers(&va_range) {
-            return Err(Error::InvalidArgs);
-        }
-
-        let mut cursor = self.pt.cursor_mut(&va_range)?;
-
-        // If overwrite is forbidden, we should check if there are existing mappings
-        if !options.can_overwrite {
-            while let Some(qr) = cursor.query() {
-                if matches!(qr, PtQr::Mapped { .. }) {
-                    return Err(Error::MapAlreadyMappedVaddr);
-                }
-            }
-            cursor.jump(va_range.start);
-        }
-
-        let prop = PageProperty {
-            flags: options.flags,
-            cache: CachePolicy::Writeback,
-            priv_flags: PrivilegedPageFlags::USER,
-        };
-
-        for frame in frames.into_iter() {
-            // SAFETY: mapping in the user space with `VmFrame` is safe.
-            unsafe {
-                cursor.map(frame, prop);
-            }
-        }
-
-        Ok(addr)
+        Ok(options.addr.unwrap())
     }
 
-    /// Query about a range of virtual memory.
-    /// You will get a iterator of `VmQueryResult` which contains the information of
-    /// each parts of the range.
-    pub fn query_range(&self, range: &Range<Vaddr>) -> Result<VmQueryIter> {
-        Ok(VmQueryIter {
-            cursor: self.pt.cursor(range)?,
-        })
-    }
-
-    /// Query about the mapping information about a byte in virtual memory.
-    /// This is more handy than [`query_range`], but less efficient if you want
-    /// to query in a batch.
-    pub fn query(&self, vaddr: Vaddr) -> Result<Option<PageProperty>> {
-        if !(0..MAX_USERSPACE_VADDR).contains(&vaddr) {
-            return Err(Error::AccessDenied);
-        }
-        Ok(self.pt.query(vaddr).map(|(_pa, prop)| prop))
+    /// determine whether a vaddr is already mapped
+    pub fn is_mapped(&self, vaddr: Vaddr) -> bool {
+        let memory_set = self.memory_set.lock();
+        memory_set.is_mapped(vaddr)
     }
 
     /// Unmaps the physical memory pages within the VM address range.
@@ -126,65 +90,39 @@ impl VmSpace {
     /// The range is allowed to contain gaps, where no physical memory pages
     /// are mapped.
     pub fn unmap(&self, range: &Range<Vaddr>) -> Result<()> {
-        if !is_page_aligned(range.start) || !is_page_aligned(range.end) {
-            return Err(Error::InvalidArgs);
-        }
-        if !UserMode::covers(range) {
-            return Err(Error::InvalidArgs);
-        }
-        // SAFETY: unmapping in the user space is safe.
-        unsafe {
-            self.pt.unmap(range)?;
+        assert!(is_page_aligned(range.start) && is_page_aligned(range.end));
+        let mut start_va = range.start;
+        let page_size = (range.end - range.start) / PAGE_SIZE;
+        let mut inner = self.memory_set.lock();
+        for i in 0..page_size {
+            inner.unmap(start_va)?;
+            start_va += PAGE_SIZE;
         }
         Ok(())
     }
 
     /// clear all mappings
     pub fn clear(&self) {
-        // SAFETY: unmapping user space is safe, and we don't care unmapping
-        // invalid ranges.
-        unsafe {
-            self.pt.unmap(&(0..MAX_USERSPACE_VADDR)).unwrap();
-        }
+        self.memory_set.lock().clear();
         #[cfg(target_arch = "x86_64")]
         x86_64::instructions::tlb::flush_all();
     }
 
     /// Update the VM protection permissions within the VM address range.
     ///
-    /// If any of the page in the given range is not mapped, it is skipped.
-    /// The method panics when virtual address is not aligned to base page
-    /// size.
-    ///
-    /// It is guarenteed that the operation is called once for each valid
-    /// page found in the range.
-    ///
-    /// TODO: It returns error when invalid operations such as protect
-    /// partial huge page happens, and efforts are not reverted, leaving us
-    /// in a bad state.
-    pub fn protect(&self, range: &Range<Vaddr>, op: impl FnMut(&mut PageProperty)) -> Result<()> {
-        if !is_page_aligned(range.start) || !is_page_aligned(range.end) {
-            return Err(Error::InvalidArgs);
-        }
-        if !UserMode::covers(range) {
-            return Err(Error::InvalidArgs);
-        }
-        // SAFETY: protecting in the user space is safe.
-        unsafe {
-            self.pt.protect(range, op)?;
+    /// The entire specified VM range must have been mapped with physical
+    /// memory pages.
+    pub fn protect(&self, range: &Range<Vaddr>, perm: VmPerm) -> Result<()> {
+        debug_assert!(range.start % PAGE_SIZE == 0);
+        debug_assert!(range.end % PAGE_SIZE == 0);
+        let start_page = range.start / PAGE_SIZE;
+        let end_page = range.end / PAGE_SIZE;
+        let flags = PageTableFlags::from(perm);
+        for page_idx in start_page..end_page {
+            let addr = page_idx * PAGE_SIZE;
+            self.memory_set.lock().protect(addr, flags)
         }
         Ok(())
-    }
-
-    /// To fork a new VM space with copy-on-write semantics.
-    ///
-    /// Both the parent and the newly forked VM space will be marked as
-    /// read-only. And both the VM space will take handles to the same
-    /// physical memory pages.
-    pub fn fork_copy_on_write(&self) -> Self {
-        Self {
-            pt: self.pt.fork_copy_on_write(),
-        }
     }
 }
 
@@ -196,37 +134,11 @@ impl Default for VmSpace {
 
 impl VmIo for VmSpace {
     fn read_bytes(&self, vaddr: usize, buf: &mut [u8]) -> Result<()> {
-        let range_end = vaddr.checked_add(buf.len()).ok_or(Error::Overflow)?;
-        let vaddr = vaddr.align_down(PAGE_SIZE);
-        let range_end = range_end.align_up(PAGE_SIZE);
-        for qr in self.query_range(&(vaddr..range_end))? {
-            if matches!(qr, VmQueryResult::NotMapped { .. }) {
-                return Err(Error::AccessDenied);
-            }
-        }
-        self.activate();
-        buf.clone_from_slice(unsafe { core::slice::from_raw_parts(vaddr as *const u8, buf.len()) });
-        Ok(())
+        self.memory_set.lock().read_bytes(vaddr, buf)
     }
 
     fn write_bytes(&self, vaddr: usize, buf: &[u8]) -> Result<()> {
-        let range_end = vaddr.checked_add(buf.len()).ok_or(Error::Overflow)?;
-        let vaddr = vaddr.align_down(PAGE_SIZE);
-        let range_end = range_end.align_up(PAGE_SIZE);
-        for qr in self.query_range(&(vaddr..vaddr + range_end))? {
-            match qr {
-                VmQueryResult::NotMapped { .. } => return Err(Error::AccessDenied),
-                VmQueryResult::Mapped { prop, .. } => {
-                    if !prop.flags.contains(PageFlags::W) {
-                        return Err(Error::AccessDenied);
-                    }
-                }
-            }
-        }
-        self.activate();
-        unsafe { core::slice::from_raw_parts_mut(vaddr as *mut u8, buf.len()) }
-            .clone_from_slice(buf);
-        Ok(())
+        self.memory_set.lock().write_bytes(vaddr, buf)
     }
 }
 
@@ -238,8 +150,8 @@ pub struct VmMapOptions {
     addr: Option<Vaddr>,
     /// map align
     align: usize,
-    /// page permissions and status
-    flags: PageFlags,
+    /// permission
+    perm: VmPerm,
     /// can overwrite
     can_overwrite: bool,
 }
@@ -249,8 +161,8 @@ impl VmMapOptions {
     pub fn new() -> Self {
         Self {
             addr: None,
-            align: PagingConsts::BASE_PAGE_SIZE,
-            flags: PageFlags::empty(),
+            align: PAGE_SIZE,
+            perm: VmPerm::empty(),
             can_overwrite: false,
         }
     }
@@ -270,8 +182,8 @@ impl VmMapOptions {
     /// the mapping can be read, written, or executed.
     ///
     /// The default value of this option is read-only.
-    pub fn flags(&mut self, flags: PageFlags) -> &mut Self {
-        self.flags = flags;
+    pub fn perm(&mut self, perm: VmPerm) -> &mut Self {
+        self.perm = perm;
         self
     }
 
@@ -303,32 +215,50 @@ impl Default for VmMapOptions {
     }
 }
 
-/// The iterator for querying over the VM space without modifying it.
-pub struct VmQueryIter<'a> {
-    cursor: Cursor<'a, UserMode, PageTableEntry, PagingConsts>,
+bitflags! {
+    /// Virtual memory protection permissions.
+    pub struct VmPerm: u8 {
+        /// Readable.
+        const R = 0b00000001;
+        /// Writable.
+        const W = 0b00000010;
+        /// Executable.
+        const X = 0b00000100;
+        /// User
+        const U = 0b00001000;
+        /// Readable + writable.
+        const RW = Self::R.bits | Self::W.bits;
+        /// Readable + execuable.
+        const RX = Self::R.bits | Self::X.bits;
+        /// Readable + writable + executable.
+        const RWX = Self::R.bits | Self::W.bits | Self::X.bits;
+        /// Readable + writable + user.
+        const RWU = Self::R.bits | Self::W.bits | Self::U.bits;
+        /// Readable + execuable + user.
+        const RXU = Self::R.bits | Self::X.bits | Self::U.bits;
+        /// Readable + writable + executable + user.
+        const RWXU = Self::R.bits | Self::W.bits | Self::X.bits | Self::U.bits;
+    }
 }
 
-pub enum VmQueryResult {
-    NotMapped {
-        va: Vaddr,
-        len: usize,
-    },
-    Mapped {
-        va: Vaddr,
-        frame: VmFrame,
-        prop: PageProperty,
-    },
+impl TryFrom<u64> for VmPerm {
+    type Error = Error;
+
+    fn try_from(value: u64) -> Result<Self> {
+        VmPerm::from_bits(value as u8).ok_or(Error::InvalidArgs)
+    }
 }
 
-impl Iterator for VmQueryIter<'_> {
-    type Item = VmQueryResult;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.cursor.next().map(|ptqr| match ptqr {
-            PtQr::NotMapped { va, len } => VmQueryResult::NotMapped { va, len },
-            PtQr::Mapped { va, frame, prop } => VmQueryResult::Mapped { va, frame, prop },
-            // It is not possible to map untyped memory in user space.
-            PtQr::MappedUntyped { .. } => unreachable!(),
-        })
+impl From<VmPerm> for PageTableFlags {
+    fn from(vm_perm: VmPerm) -> Self {
+        let mut flags = PageTableFlags::PRESENT | PageTableFlags::USER;
+        if vm_perm.contains(VmPerm::W) {
+            flags |= PageTableFlags::WRITABLE;
+        }
+        // FIXME: how to respect executable flags?
+        if !vm_perm.contains(VmPerm::X) {
+            flags |= PageTableFlags::NO_EXECUTE;
+        }
+        flags
     }
 }

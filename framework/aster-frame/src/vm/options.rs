@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{frame::VmFrameFlags, frame_allocator, VmFrame, VmFrameVec, VmSegment};
 use crate::{prelude::*, Error};
+
+use super::{frame::VmFrameFlags, frame_allocator, VmFrame, VmFrameVec, VmSegment};
 
 /// Options for allocating physical memory pages (or frames).
 ///
@@ -84,8 +85,7 @@ impl VmAllocOptions {
     ///
     /// The returned `VmSegment` contains at least one page frame.
     pub fn alloc_contiguous(&self) -> Result<VmSegment> {
-        // It's no use to checking `self.is_contiguous` here.
-        if self.nframes == 0 {
+        if !self.is_contiguous || self.nframes == 0 {
             return Err(Error::InvalidArgs);
         }
 

@@ -1,3 +1,0 @@
-EventfdTest.IllegalPwrite
-EventfdTest.SpliceFromPipePartialSucceeds
-EventfdTest.NotifyNonZero_NoRandomSave

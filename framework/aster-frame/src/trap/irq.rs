@@ -1,22 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use crate::arch::irq::{self, IrqCallbackHandle, NOT_USING_IRQ};
+use crate::task::{disable_preempt, DisablePreemptGuard};
+use crate::{prelude::*, Error};
+
 use core::fmt::Debug;
-
 use trapframe::TrapFrame;
-
-use crate::{
-    arch::irq::{self, IrqCallbackHandle, IRQ_ALLOCATOR},
-    prelude::*,
-    task::{disable_preempt, DisablePreemptGuard},
-    Error,
-};
 
 pub type IrqCallbackFunction = dyn Fn(&TrapFrame) + Sync + Send + 'static;
 
 /// An Interrupt ReQuest(IRQ) line. User can use `alloc` or `alloc_specific` to get specific IRQ line.
 ///
 /// The IRQ number is guaranteed to be external IRQ number and user can register callback functions to this IRQ resource.
-/// When this resource is dropped, all the callback in this will be unregistered automatically.
+/// When this resrouce is dropped, all the callback in this will be unregistered automatically.
 #[derive(Debug)]
 #[must_use]
 pub struct IrqLine {
@@ -28,24 +24,24 @@ pub struct IrqLine {
 
 impl IrqLine {
     pub fn alloc_specific(irq: u8) -> Result<Self> {
-        IRQ_ALLOCATOR
-            .get()
-            .unwrap()
-            .lock()
-            .alloc_specific(irq as usize)
-            .map(|irq_num| Self::new(irq_num as u8))
-            .ok_or(Error::NotEnoughResources)
+        if NOT_USING_IRQ.lock().get_target(irq as usize) {
+            Ok(Self::new(irq))
+        } else {
+            Err(Error::NotEnoughResources)
+        }
     }
 
     pub fn alloc() -> Result<Self> {
-        let Some(irq_num) = IRQ_ALLOCATOR.get().unwrap().lock().alloc() else {
-            return Err(Error::NotEnoughResources);
-        };
-        Ok(Self::new(irq_num as u8))
+        let irq_num = NOT_USING_IRQ.lock().alloc();
+        if irq_num == usize::MAX {
+            Err(Error::NotEnoughResources)
+        } else {
+            Ok(Self::new(irq_num as u8))
+        }
     }
 
     fn new(irq_num: u8) -> Self {
-        // SAFETY: The IRQ number is allocated through `RecycleAllocator`, and it is guaranteed that the
+        // Safety: The IRQ number is allocated through `RecycleAllocator`, and it is guaranteed that the
         // IRQ is not one of the important IRQ like cpu exception IRQ.
         Self {
             irq_num,
@@ -87,11 +83,7 @@ impl Clone for IrqLine {
 impl Drop for IrqLine {
     fn drop(&mut self) {
         if Arc::strong_count(&self.irq) == 1 {
-            IRQ_ALLOCATOR
-                .get()
-                .unwrap()
-                .lock()
-                .free(self.irq_num as usize);
+            NOT_USING_IRQ.lock().dealloc(self.irq_num as usize);
         }
     }
 }
@@ -107,7 +99,7 @@ impl Drop for IrqLine {
 ///
 /// # Example
 ///
-/// ```rust
+/// ``rust
 /// use aster_frame::irq;
 ///
 /// {
@@ -158,18 +150,5 @@ impl Drop for DisabledLocalIrqGuard {
         if self.was_enabled {
             irq::enable_local();
         }
-    }
-}
-
-/// FIXME: The reason we need to add this API is that currently IRQs
-/// are enabled when the CPU enters the user space for the first time,
-/// which is too late. During the OS initialization phase,
-/// we need to get the block device working and mount the filesystems,
-/// thus requiring the IRQs should be enabled as early as possible.
-///
-/// FIXME: this method may be unsound.
-pub fn enable_local() {
-    if !crate::arch::irq::is_local_enabled() {
-        crate::arch::irq::enable_local();
     }
 }

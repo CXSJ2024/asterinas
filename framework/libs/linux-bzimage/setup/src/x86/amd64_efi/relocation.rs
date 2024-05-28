@@ -30,7 +30,7 @@ fn get_rela_array() -> &'static [Elf64Rela] {
             end = in(reg) end,
             start = in(reg) start,
         );
-        len / core::mem::size_of::<Elf64Rela>()
+        len / core::mem::size_of::<Elf64Rela>() as usize
     };
     #[cfg(feature = "debug_print")]
     unsafe {
@@ -43,8 +43,8 @@ fn get_rela_array() -> &'static [Elf64Rela] {
         print_hex(end as u64);
         print_str("\n");
     }
-    // SAFETY: the linker will ensure that the symbols are valid.
-    unsafe { core::slice::from_raw_parts(start, len) }
+    // Safety: the linker will ensure that the symbols are valid.
+    unsafe { core::slice::from_raw_parts(start as *const Elf64Rela, len) }
 }
 
 const R_X86_64_RELATIVE: u32 = 8;

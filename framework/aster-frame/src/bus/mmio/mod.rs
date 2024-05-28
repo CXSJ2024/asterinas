@@ -5,20 +5,19 @@
 pub mod bus;
 pub mod device;
 
-use alloc::vec::Vec;
 use core::ops::Range;
 
-#[cfg(feature = "intel_tdx")]
-use ::tdx_guest::tdx_is_enabled;
+use alloc::vec::Vec;
 use log::debug;
 
-use self::bus::MmioBus;
-#[cfg(feature = "intel_tdx")]
-use crate::arch::tdx_guest;
 use crate::{
     arch::kernel::IO_APIC, bus::mmio::device::MmioCommonDevice, sync::SpinLock, trap::IrqLine,
     vm::paddr_to_vaddr,
 };
+
+use self::bus::MmioBus;
+#[cfg(feature = "intel_tdx")]
+use crate::arch::tdx_guest::unprotect_gpa_range;
 
 const VIRTIO_MMIO_MAGIC: u32 = 0x74726976;
 
@@ -26,17 +25,9 @@ pub static MMIO_BUS: SpinLock<MmioBus> = SpinLock::new(MmioBus::new());
 static IRQS: SpinLock<Vec<IrqLine>> = SpinLock::new(Vec::new());
 
 pub fn init() {
+    // set shared
     #[cfg(feature = "intel_tdx")]
-    // SAFETY:
-    // This is safe because we are ensuring that the address range 0xFEB0_0000 to 0xFEB0_4000 is valid before this operation.
-    // The address range is page-aligned and falls within the MMIO range, which is a requirement for the `unprotect_gpa_range` function.
-    // We are also ensuring that we are only unprotecting four pages.
-    // Therefore, we are not causing any undefined behavior or violating any of the requirements of the `unprotect_gpa_range` function.
-    if tdx_is_enabled() {
-        unsafe {
-            tdx_guest::unprotect_gpa_range(0xFEB0_0000, 4).unwrap();
-        }
-    }
+    unsafe { unprotect_gpa_range(0xFEB0_0000, 4).unwrap() };
     // FIXME: The address 0xFEB0_0000 is obtained from an instance of microvm, and it may not work in other architecture.
     iter_range(0xFEB0_0000..0xFEB0_4000);
 }
@@ -55,10 +46,10 @@ fn iter_range(range: Range<usize>) {
     let mut device_count = 0;
     while current > range.start {
         current -= 0x100;
-        // SAFETY: It only read the value and judge if the magic value fit 0x74726976
+        // Safety: It only read the value and judge if the magic value fit 0x74726976
         let value = unsafe { *(paddr_to_vaddr(current) as *const u32) };
         if value == VIRTIO_MMIO_MAGIC {
-            // SAFETY: It only read the device id
+            // Safety: It only read the device id
             let device_id = unsafe { *(paddr_to_vaddr(current + 8) as *const u32) };
             device_count += 1;
             if device_id == 0 {

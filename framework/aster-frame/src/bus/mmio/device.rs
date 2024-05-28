@@ -3,12 +3,13 @@
 use int_to_c_enum::TryFromInt;
 use log::info;
 
-use super::VIRTIO_MMIO_MAGIC;
 use crate::{
     io_mem::IoMem,
     trap::IrqLine,
     vm::{paddr_to_vaddr, Paddr, VmIo},
 };
+
+use super::VIRTIO_MMIO_MAGIC;
 
 /// MMIO Common device.
 /// TODO: Implement universal access to MMIO devices since we are temporarily
@@ -22,11 +23,11 @@ pub struct MmioCommonDevice {
 impl MmioCommonDevice {
     pub(super) fn new(paddr: Paddr, handle: IrqLine) -> Self {
         // Read magic value
-        // SAFETY: It only read the value and judge if the magic value fit 0x74726976
+        // Safety: It only read the value and judge if the magic value fit 0x74726976
         unsafe {
             debug_assert_eq!(*(paddr_to_vaddr(paddr) as *const u32), VIRTIO_MMIO_MAGIC);
         }
-        // SAFETY: This range is virtio-mmio device space.
+        // Safety: This range is virtio-mmio device space.
         let io_mem = unsafe { IoMem::new(paddr..paddr + 0x200) };
         let res = Self {
             io_mem,

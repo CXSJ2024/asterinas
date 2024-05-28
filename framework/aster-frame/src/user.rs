@@ -2,9 +2,11 @@
 
 //! User space.
 
+use crate::cpu::UserContext;
+use crate::prelude::*;
+use crate::task::Task;
+use crate::vm::VmSpace;
 use trapframe::TrapFrame;
-
-use crate::{cpu::UserContext, prelude::*, task::Task, vm::VmSpace};
 
 /// A user space.
 ///
@@ -12,7 +14,7 @@ use crate::{cpu::UserContext, prelude::*, task::Task, vm::VmSpace};
 /// user mode.
 pub struct UserSpace {
     /// vm space
-    vm_space: Arc<VmSpace>,
+    vm_space: VmSpace,
     /// cpu context before entering user space
     init_ctx: UserContext,
 }
@@ -22,7 +24,7 @@ impl UserSpace {
     ///
     /// Each instance maintains a VM address space and the CPU state to enable
     /// execution in the user space.
-    pub fn new(vm_space: Arc<VmSpace>, init_ctx: UserContext) -> Self {
+    pub fn new(vm_space: VmSpace, init_ctx: UserContext) -> Self {
         Self { vm_space, init_ctx }
     }
 
@@ -64,6 +66,18 @@ pub trait UserContextApi {
 
     /// Get the trap error code of this interrupt.
     fn trap_error_code(&self) -> usize;
+
+    /// Get number of syscall
+    fn syscall_num(&self) -> usize;
+
+    /// Get return value of syscall
+    fn syscall_ret(&self) -> usize;
+
+    /// Set return value of syscall
+    fn set_syscall_ret(&mut self, ret: usize);
+
+    /// Get syscall args
+    fn syscall_args(&self) -> [usize; 6];
 
     /// Set instruction pointer
     fn set_instruction_pointer(&mut self, ip: usize);
@@ -126,7 +140,9 @@ impl<'a> UserMode<'a> {
     /// After handling the user event and updating the user-mode CPU context,
     /// this method can be invoked again to go back to the user space.
     pub fn execute(&mut self) -> UserEvent {
-        self.user_space.vm_space().activate();
+        unsafe {
+            self.user_space.vm_space().activate();
+        }
         debug_assert!(Arc::ptr_eq(&self.current, &Task::current()));
         self.context.execute()
     }

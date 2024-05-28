@@ -10,18 +10,10 @@ mod rwmutex;
 mod spin;
 mod wait;
 
+pub use self::atomic_bits::AtomicBits;
+pub use self::mutex::{Mutex, MutexGuard};
 // pub use self::rcu::{pass_quiescent_state, OwnerPtr, Rcu, RcuReadGuard, RcuReclaimer};
-pub use self::{
-    atomic_bits::AtomicBits,
-    mutex::{ArcMutexGuard, Mutex, MutexGuard},
-    rwlock::{
-        ArcRwLockReadGuard, ArcRwLockUpgradeableGuard, ArcRwLockWriteGuard, RwLock,
-        RwLockReadGuard, RwLockUpgradeableGuard, RwLockWriteGuard,
-    },
-    rwmutex::{
-        ArcRwMutexReadGuard, ArcRwMutexUpgradeableGuard, ArcRwMutexWriteGuard, RwMutex,
-        RwMutexReadGuard, RwMutexUpgradeableGuard, RwMutexWriteGuard,
-    },
-    spin::{ArcSpinLockGuard, SpinLock, SpinLockGuard},
-    wait::{WaitQueue, Waiter, Waker},
-};
+pub use self::rwlock::{RwLock, RwLockReadGuard, RwLockUpgradeableGuard, RwLockWriteGuard};
+pub use self::rwmutex::{RwMutex, RwMutexReadGuard, RwMutexUpgradeableGuard, RwMutexWriteGuard};
+pub use self::spin::{SpinLock, SpinLockGuard};
+pub use self::wait::WaitQueue;

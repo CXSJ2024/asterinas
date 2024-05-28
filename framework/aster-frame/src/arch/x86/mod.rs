@@ -12,12 +12,14 @@ pub(crate) mod pci;
 pub mod qemu;
 #[cfg(feature = "intel_tdx")]
 pub(crate) mod tdx_guest;
-pub mod timer;
+use crate::early_println;
+#[cfg(feature = "intel_tdx")]
+use ::tdx_guest::tdx_is_enabled;
+
+pub(crate) mod timer;
 
 use core::{arch::x86_64::_rdtsc, sync::atomic::Ordering};
 
-#[cfg(feature = "intel_tdx")]
-use ::tdx_guest::tdx_is_enabled;
 use kernel::apic::ioapic;
 use log::{info, warn};
 
@@ -28,6 +30,7 @@ pub(crate) fn before_all_init() {
 
 pub(crate) fn after_all_init() {
     irq::init();
+    mm::init();
     kernel::acpi::init();
     match kernel::apic::init() {
         Ok(_) => {
@@ -59,7 +62,7 @@ pub(crate) fn after_all_init() {
 pub(crate) fn interrupts_ack() {
     kernel::pic::ack();
     if let Some(apic) = kernel::apic::APIC_INSTANCE.get() {
-        apic.lock_irq_disabled().eoi();
+        apic.lock().eoi();
     }
 }
 
@@ -70,18 +73,14 @@ pub fn tsc_freq() -> u64 {
 
 /// Reads the current value of the processor’s time-stamp counter (TSC).
 pub fn read_tsc() -> u64 {
-    // SAFETY: It is safe to read a time-related counter.
+    // Safety: It is safe to read a time-related counter.
     unsafe { _rdtsc() }
 }
 
 fn enable_common_cpu_features() {
     use x86_64::registers::{control::Cr4Flags, model_specific::EferFlags, xcontrol::XCr0Flags};
     let mut cr4 = x86_64::registers::control::Cr4::read();
-    cr4 |= Cr4Flags::FSGSBASE
-        | Cr4Flags::OSXSAVE
-        | Cr4Flags::OSFXSR
-        | Cr4Flags::OSXMMEXCPT_ENABLE
-        | Cr4Flags::PAGE_GLOBAL;
+    cr4 |= Cr4Flags::FSGSBASE | Cr4Flags::OSXSAVE | Cr4Flags::OSFXSR | Cr4Flags::OSXMMEXCPT_ENABLE;
     unsafe {
         x86_64::registers::control::Cr4::write(cr4);
     }
@@ -92,10 +91,10 @@ fn enable_common_cpu_features() {
         x86_64::registers::xcontrol::XCr0::write(xcr0);
     }
 
-    unsafe {
-        // enable non-executable page protection
-        x86_64::registers::model_specific::Efer::update(|efer| {
-            *efer |= EferFlags::NO_EXECUTE_ENABLE;
-        });
-    }
+    // unsafe {
+    //     // enable non-executable page protection
+    //     x86_64::registers::model_specific::Efer::update(|efer| {
+    //         *efer |= EferFlags::NO_EXECUTE_ENABLE;
+    //     });
+    // }
 }

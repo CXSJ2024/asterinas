@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::arch::{asm, global_asm};
-
 use linux_boot_params::BootParams;
+
+use core::arch::{asm, global_asm};
 
 global_asm!(include_str!("header.S"));
 
@@ -14,7 +14,7 @@ pub const ASTER_ENTRY_POINT: u32 = 0x8001000;
 
 #[export_name = "_bzimage_entry_32"]
 extern "cdecl" fn bzimage_entry(boot_params_ptr: u32) -> ! {
-    // SAFETY: this init function is only called once.
+    // Safety: this init function is only called once.
     unsafe { crate::console::init() };
 
     // println!("[setup] bzImage loaded at {:#x}", x86::relocation::get_image_loaded_offset());
@@ -24,13 +24,13 @@ extern "cdecl" fn bzimage_entry(boot_params_ptr: u32) -> ! {
         print_str("\n");
     }
 
-    // SAFETY: the boot_params_ptr is a valid pointer to be borrowed.
+    // Safety: the boot_params_ptr is a valid pointer to be borrowed.
     let boot_params = unsafe { &*(boot_params_ptr as *const BootParams) };
-    // SAFETY: the payload_offset and payload_length is valid.
+    // Safety: the payload_offset and payload_length is valid.
     let payload = crate::get_payload(boot_params);
     crate::loader::load_elf(payload);
 
-    // SAFETY: the entrypoint and the ptr is valid.
+    // Safety: the entrypoint and the ptr is valid.
     unsafe { call_aster_entrypoint(ASTER_ENTRY_POINT, boot_params_ptr.try_into().unwrap()) };
 }
 

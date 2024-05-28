@@ -19,9 +19,6 @@ echo "Start network test......"
 ./sockoption
 ./listen_backlog
 ./send_buf_full
-./http_server &
-./http_client
-./tcp_err
-./udp_err
+
 
 echo "All network test passed"

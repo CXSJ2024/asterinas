@@ -1,16 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{vec, vec::Vec};
-
-#[cfg(feature = "intel_tdx")]
-use ::tdx_guest::tdx_is_enabled;
 use acpi::PlatformInfo;
+use alloc::vec;
+use alloc::vec::Vec;
 use bit_field::BitField;
 use log::info;
 use spin::Once;
 
 #[cfg(feature = "intel_tdx")]
-use crate::arch::tdx_guest;
+use crate::arch::tdx_guest::unprotect_gpa_range;
 use crate::{
     arch::x86::kernel::acpi::ACPI_TABLES, sync::SpinLock, trap::IrqLine, vm::paddr_to_vaddr, Error,
     Result,
@@ -110,7 +108,7 @@ impl IoApicAccess {
     }
 
     pub fn read(&mut self, register: u8) -> u32 {
-        // SAFETY: Since the base address is valid, the read/write should be safe.
+        // Safety: Since the base address is valid, the read/write should be safe.
         unsafe {
             self.register.write_volatile(register as u32);
             self.data.read_volatile()
@@ -118,7 +116,7 @@ impl IoApicAccess {
     }
 
     pub fn write(&mut self, register: u8, data: u32) {
-        // SAFETY: Since the base address is valid, the read/write should be safe.
+        // Safety: Since the base address is valid, the read/write should be safe.
         unsafe {
             self.register.write_volatile(register as u32);
             self.data.write_volatile(data);
@@ -155,17 +153,9 @@ pub fn init() {
             // FIXME: Is it possible to have an address that is not the default 0xFEC0_0000?
             // Need to find a way to determine if it is a valid address or not.
             const IO_APIC_DEFAULT_ADDRESS: usize = 0xFEC0_0000;
+            // set shared
             #[cfg(feature = "intel_tdx")]
-            // SAFETY:
-            // This is safe because we are ensuring that the `IO_APIC_DEFAULT_ADDRESS` is a valid MMIO address before this operation.
-            // The `IO_APIC_DEFAULT_ADDRESS` is a well-known address used for IO APICs in x86 systems, and it is page-aligned, which is a requirement for the `unprotect_gpa_range` function.
-            // We are also ensuring that we are only unprotecting a single page.
-            // Therefore, we are not causing any undefined behavior or violating any of the requirements of the `unprotect_gpa_range` function.
-            if tdx_is_enabled() {
-                unsafe {
-                    tdx_guest::unprotect_gpa_range(IO_APIC_DEFAULT_ADDRESS, 1).unwrap();
-                }
-            }
+            unsafe { unprotect_gpa_range(IO_APIC_DEFAULT_ADDRESS, 1).unwrap() };
             let mut io_apic = unsafe { IoApicAccess::new(IO_APIC_DEFAULT_ADDRESS) };
             io_apic.set_id(0);
             let id = io_apic.id();

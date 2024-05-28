@@ -3,21 +3,17 @@
 use alloc::sync::Arc;
 use core::ops::Deref;
 
-#[cfg(feature = "intel_tdx")]
-use ::tdx_guest::tdx_is_enabled;
+use crate::arch::{iommu, mm::PageTableFlags};
+use crate::vm::{
+    dma::{dma_type, Daddr, DmaType},
+    paddr_to_vaddr,
+    page_table::KERNEL_PAGE_TABLE,
+    HasPaddr, Paddr, VmIo, VmReader, VmSegment, VmWriter, PAGE_SIZE,
+};
 
 use super::{check_and_insert_dma_mapping, remove_dma_mapping, DmaError, HasDaddr};
 #[cfg(feature = "intel_tdx")]
-use crate::arch::tdx_guest;
-use crate::{
-    arch::iommu,
-    vm::{
-        dma::{dma_type, Daddr, DmaType},
-        kspace::{paddr_to_vaddr, KERNEL_PAGE_TABLE},
-        page_prop::CachePolicy,
-        HasPaddr, Paddr, VmIo, VmReader, VmSegment, VmWriter, PAGE_SIZE,
-    },
-};
+use crate::arch::tdx_guest::{protect_gpa_range, unprotect_gpa_range};
 
 /// A coherent (or consistent) DMA mapping,
 /// which guarantees that the device and the CPU can
@@ -53,38 +49,32 @@ impl DmaCoherent {
         if !check_and_insert_dma_mapping(start_paddr, frame_count) {
             return Err(DmaError::AlreadyMapped);
         }
-        // Ensure that the addresses used later will not overflow
-        start_paddr.checked_add(frame_count * PAGE_SIZE).unwrap();
         if !is_cache_coherent {
-            let page_table = KERNEL_PAGE_TABLE.get().unwrap();
-            let vaddr = paddr_to_vaddr(start_paddr);
-            let va_range = vaddr..vaddr + (frame_count * PAGE_SIZE);
-            // SAFETY: the physical mappings is only used by DMA so protecting it is safe.
-            unsafe {
-                page_table
-                    .protect(&va_range, |p| p.cache = CachePolicy::Uncacheable)
-                    .unwrap();
+            let mut page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
+            for i in 0..frame_count {
+                let paddr = start_paddr + (i * PAGE_SIZE);
+                let vaddr = paddr_to_vaddr(paddr);
+                let flags = page_table.flags(vaddr).unwrap();
+                // Safety: the address is in the range of `vm_segment`.
+                unsafe {
+                    page_table
+                        .protect(vaddr, flags.union(PageTableFlags::NO_CACHE))
+                        .unwrap();
+                }
             }
         }
         let start_daddr = match dma_type() {
             DmaType::Direct => {
                 #[cfg(feature = "intel_tdx")]
-                // SAFETY:
-                // This is safe because we are ensuring that the physical address range specified by `start_paddr` and `frame_count` is valid before these operations.
-                // The `check_and_insert_dma_mapping` function checks if the physical address range is already mapped.
-                // We are also ensuring that we are only modifying the page table entries corresponding to the physical address range specified by `start_paddr` and `frame_count`.
-                // Therefore, we are not causing any undefined behavior or violating any of the requirements of the 'unprotect_gpa_range' function.
-                if tdx_is_enabled() {
-                    unsafe {
-                        tdx_guest::unprotect_gpa_range(start_paddr, frame_count).unwrap();
-                    }
-                }
+                unsafe {
+                    unprotect_gpa_range(start_paddr, frame_count).unwrap()
+                };
                 start_paddr as Daddr
             }
             DmaType::Iommu => {
                 for i in 0..frame_count {
                     let paddr = start_paddr + (i * PAGE_SIZE);
-                    // SAFETY: the `paddr` is restricted by the `start_paddr` and `frame_count` of the `vm_segment`.
+                    // Safety: the `paddr` is restricted by the `start_paddr` and `frame_count` of the `vm_segment`.
                     unsafe {
                         iommu::map(paddr as Daddr, paddr).unwrap();
                     }
@@ -119,21 +109,12 @@ impl Drop for DmaCoherentInner {
     fn drop(&mut self) {
         let frame_count = self.vm_segment.nframes();
         let start_paddr = self.vm_segment.start_paddr();
-        // Ensure that the addresses used later will not overflow
-        start_paddr.checked_add(frame_count * PAGE_SIZE).unwrap();
         match dma_type() {
             DmaType::Direct => {
                 #[cfg(feature = "intel_tdx")]
-                // SAFETY:
-                // This is safe because we are ensuring that the physical address range specified by `start_paddr` and `frame_count` is valid before these operations.
-                // The `start_paddr()` ensures the `start_paddr` is page-aligned.
-                // We are also ensuring that we are only modifying the page table entries corresponding to the physical address range specified by `start_paddr` and `frame_count`.
-                // Therefore, we are not causing any undefined behavior or violating any of the requirements of the `protect_gpa_range` function.
-                if tdx_is_enabled() {
-                    unsafe {
-                        tdx_guest::protect_gpa_range(start_paddr, frame_count).unwrap();
-                    }
-                }
+                unsafe {
+                    protect_gpa_range(start_paddr, frame_count)
+                };
             }
             DmaType::Iommu => {
                 for i in 0..frame_count {
@@ -143,14 +124,16 @@ impl Drop for DmaCoherentInner {
             }
         }
         if !self.is_cache_coherent {
-            let page_table = KERNEL_PAGE_TABLE.get().unwrap();
-            let vaddr = paddr_to_vaddr(start_paddr);
-            let va_range = vaddr..vaddr + (frame_count * PAGE_SIZE);
-            // SAFETY: the physical mappings is only used by DMA so protecting it is safe.
-            unsafe {
-                page_table
-                    .protect(&va_range, |p| p.cache = CachePolicy::Writeback)
-                    .unwrap();
+            let mut page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
+            for i in 0..frame_count {
+                let paddr = start_paddr + (i * PAGE_SIZE);
+                let vaddr = paddr_to_vaddr(paddr);
+                let mut flags = page_table.flags(vaddr).unwrap();
+                flags.remove(PageTableFlags::NO_CACHE);
+                // Safety: the address is in the range of `vm_segment`.
+                unsafe {
+                    page_table.protect(vaddr, flags).unwrap();
+                }
             }
         }
         remove_dma_mapping(start_paddr, frame_count);
@@ -185,12 +168,11 @@ impl HasPaddr for DmaCoherent {
     }
 }
 
-#[cfg(ktest)]
+#[if_cfg_ktest]
 mod test {
-    use alloc::vec;
-
     use super::*;
     use crate::vm::VmAllocOptions;
+    use alloc::vec;
 
     #[ktest]
     fn map_with_coherent_device() {
@@ -210,9 +192,11 @@ mod test {
             .unwrap();
         let dma_coherent = DmaCoherent::map(vm_segment.clone(), false).unwrap();
         assert!(dma_coherent.paddr() == vm_segment.paddr());
-        let page_table = KERNEL_PAGE_TABLE.get().unwrap();
-        let vaddr = paddr_to_vaddr(vm_segment.paddr());
-        assert!(page_table.query(vaddr).unwrap().1.cache == CachePolicy::Uncacheable);
+        let mut page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
+        assert!(page_table
+            .flags(paddr_to_vaddr(vm_segment.paddr()))
+            .unwrap()
+            .contains(PageTableFlags::NO_CACHE))
     }
 
     #[ktest]

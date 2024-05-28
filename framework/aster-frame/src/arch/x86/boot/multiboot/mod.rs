@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{string::String, vec::Vec};
-use core::arch::global_asm;
-
 use multiboot2::MemoryAreaType;
 use spin::Once;
 
@@ -12,8 +10,11 @@ use crate::{
         memory_region::{non_overlapping_regions_from, MemoryRegion, MemoryRegionType},
         BootloaderAcpiArg, BootloaderFramebufferArg,
     },
-    vm::kspace::{paddr_to_vaddr, LINEAR_MAPPING_BASE_VADDR},
+    config::PHYS_OFFSET,
+    vm::paddr_to_vaddr,
 };
+
+use core::arch::global_asm;
 
 global_asm!(include_str!("header.S"));
 
@@ -24,7 +25,7 @@ fn init_bootloader_name(bootloader_name: &'static Once<String>) {
         let mut name = "";
         let info = MB1_INFO.get().unwrap();
         if info.boot_loader_name != 0 {
-            // SAFETY: the bootloader name is C-style zero-terminated string.
+            // Safety: the bootloader name is C-style zero-terminated string.
             unsafe {
                 let cstr = paddr_to_vaddr(info.boot_loader_name as usize) as *const u8;
                 let mut len = 0;
@@ -45,7 +46,7 @@ fn init_kernel_commandline(kernel_cmdline: &'static Once<KCmdlineArg>) {
         let mut cmdline = "";
         let info = MB1_INFO.get().unwrap();
         if info.cmdline != 0 {
-            // SAFETY: the command line is C-style zero-terminated string.
+            // Safety: the command line is C-style zero-terminated string.
             unsafe {
                 let cstr = paddr_to_vaddr(info.cmdline as usize) as *const u8;
                 let mut len = 0;
@@ -76,7 +77,7 @@ fn init_initramfs(initramfs: &'static Once<&'static [u8]>) {
         )
     };
     // We must return a slice composed by VA since kernel should read every in VA.
-    let base_va = if start < LINEAR_MAPPING_BASE_VADDR {
+    let base_va = if start < PHYS_OFFSET {
         paddr_to_vaddr(start)
     } else {
         start
