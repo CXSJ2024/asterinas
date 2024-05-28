@@ -1,4 +1,4 @@
-use core::{fmt::Display, str::FromStr};
+use core::fmt::Display;
 
 
 use alloc::{format, string::{String, ToString}, vec::Vec};
@@ -21,7 +21,7 @@ pub enum EntryTemplate{
 
 impl EntryTemplate {
     pub fn template_from_u32(field:u32)->Self{
-        match field {
+        match field & 0xf0 {
             0x10 => Self::ImaNg,
             0x20 => Self::Ima,
             _ => Self::Unknown
@@ -29,9 +29,9 @@ impl EntryTemplate {
     }
 
     pub fn algo_from_u32(field:u32)->IMAAlogrithm{
-        match field {
-            0x01 => IMAAlogrithm::SHA1,
-            0x0 => IMAAlogrithm::SHA256,
+        match field & 0x0f {
+            0x1 => IMAAlogrithm::SHA1,
+            0x2 => IMAAlogrithm::SHA256,
             _ => IMAAlogrithm::SHA1,
         }
     } 
@@ -73,9 +73,9 @@ impl Display for MeasurementEntry{
 impl Into<String> for MeasurementEntry{
     fn into(self) -> String {
         let template_str = VecU8::new(self.template_hash.to_vec()).to_string();
-        let template_type:String = EntryTemplate::template_from_u32(self.field & 0xf0).into();
+        let template_type:String = EntryTemplate::template_from_u32(self.field).into();
         let content_str: String = IMAHash{ 
-            algo: EntryTemplate::algo_from_u32(self.field & 0x0f), 
+            algo: EntryTemplate::algo_from_u32(self.field), 
             hash: VecU8::new(self.filedata_hash.to_vec()) 
         }.into();
         format!("{} {} {} {} {}\n",

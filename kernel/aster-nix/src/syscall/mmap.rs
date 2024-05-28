@@ -9,7 +9,7 @@ use super::SyscallReturn;
 use crate::{
     fs::file_table::FileDesc,
     prelude::*,
-    security::integrity::ima::ima_appraisal::{ima_appraisal_dentry, ima_appraisal_fd},
+    security::integrity::ima::ima_appraisal::ima_appraisal_dentry,
     vm::{
         perms::VmPerms,
         vmo::{Vmo, VmoChildOptions, VmoOptions, VmoRightsOp},

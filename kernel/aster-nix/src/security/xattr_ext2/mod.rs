@@ -7,7 +7,7 @@ use crate::{
     println, 
     security::integrity::ml::{entry_list::PCR,sync_write_file},
 };
-use aster_frame::ima::tpm::{PcrOp, DEFAULT_PCR_REGISTER};
+use aster_frame::ima::tpm::DEFAULT_PCR_REGISTER;
 use super::integrity::ml::entry_list;
 use xattr::{Xattr,measure_all};
 
@@ -20,7 +20,7 @@ mod util;
 
 pub const XATTR_PATH: &str = "/xattr";
 
-const USER_EXECUTABLE_PREFIX: &str = "/regression";
+
 
 const IMA_XATTR_KEY: &str = "security.ima";
 
@@ -36,7 +36,20 @@ pub fn xattr_init() -> Option<Xattr> {
     let mut ml = entry_list::MeasurementList::get_list();
     if let (Ok(inode), Ok(_)) = (
         xattr_inode,
-        measure_all(&mut ml,&fs_resolver, USER_EXECUTABLE_PREFIX),
+        {
+            let mut res  = None;
+            for dir in entry_list::FIX_MODE_PREFIX{
+                if measure_all(&mut ml,&fs_resolver, dir).is_err(){
+                    res = Some(dir);
+                    break;
+                }
+            }
+            if let Some(s) = res{
+                Err(s)
+            }else{
+                Ok(())
+            }
+        }
     ) {
         if ml.verify_ml() {
             let _ = Xattr::xattr_handler();
@@ -45,7 +58,7 @@ pub fn xattr_init() -> Option<Xattr> {
                 DEFAULT_PCR_REGISTER,
                 PCR::op().read_pcr(DEFAULT_PCR_REGISTER)
             );
-            sync_write_file(&mut ml);
+            let _ = sync_write_file(&mut ml);
             Some(Xattr { xattr_block: inode })
         }else{
             println!(

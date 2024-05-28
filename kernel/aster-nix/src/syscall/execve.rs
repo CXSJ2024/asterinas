@@ -18,7 +18,7 @@ use crate::{
         posix_thread::{PosixThreadExt, ThreadName},
         Credentials, MAX_ARGV_NUMBER, MAX_ARG_LEN, MAX_ENVP_NUMBER, MAX_ENV_LEN,
     },
-    security::integrity::ima::ima_appraisal::{ima_appraisal_dentry, ima_appraisal_ih},
+    security::integrity::ima::ima_appraisal::ima_appraisal_dentry,
     util::{read_cstring_from_user, read_val_from_user},
 };
 

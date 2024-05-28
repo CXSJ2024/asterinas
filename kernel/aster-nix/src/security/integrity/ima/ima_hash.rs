@@ -130,6 +130,7 @@ pub fn cal_fd_hash(
     inode: &Arc<dyn Inode>,
     buf_len: usize,
     algo: Option<IMAAlogrithm>,
+    path: Option<&str>
 ) -> Result<IMAHash> {
     let algo = algo.unwrap_or(IMAAlogrithm::default());
     let mut hasher = select_hasher(&algo);
@@ -142,6 +143,9 @@ pub fn cal_fd_hash(
         if read_len < buf_len {
             break;
         }
+    }
+    if let Some(s) = path{
+        hasher.update(s.as_bytes());
     }
     Ok(IMAHash {
         algo,

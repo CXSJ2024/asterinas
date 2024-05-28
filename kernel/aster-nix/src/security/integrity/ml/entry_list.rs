@@ -1,11 +1,13 @@
-use alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec};
+use alloc::{boxed::Box, collections::BTreeMap, vec::Vec};
 
 use digest::DynDigest;
 use sha1::Sha1;
 use spin::{Mutex, MutexGuard};
 
-use aster_frame::{arch::console::print, ima::tpm::{PcrValue, DEFAULT_PCR_REGISTER, PCR_BITSIZE}};
+use aster_frame::{ima::tpm::{PcrValue, DEFAULT_PCR_REGISTER, PCR_BITSIZE}};
 
+
+use crate::security::integrity::ima::ima_hash::IMAAlogrithm;
 
 use super::entry::MeasurementEntry;
 
@@ -17,8 +19,34 @@ use aster_frame::ima::tpm::{ram_tpm::RAMTpm,PcrOp};
 
 static IMA_MEASUREMENT_LIST: Mutex<MeasurementList> = Mutex::new(MeasurementList::default());
 
+// path prefix need to measure in fix mode
+pub const FIX_MODE_PREFIX: [&str;3] = ["/etc","/usr","/regression"];
 
 
+pub fn check_hint(abs_path:&str,ml_appraise:u8) -> bool{
+    match ml_appraise {
+        1 => {
+            for s in FIX_MODE_PREFIX.iter(){
+                if let Some(a) = abs_path.find(s){
+                    if a == 0 {
+                        return true;
+                    }
+                }
+            }
+            false
+        },
+        _ => {
+            false
+        },
+    }
+}
+
+
+pub fn select_ima_algo(ml_template:u8) -> Option<IMAAlogrithm>{
+    match ml_template {
+        _ => Some(IMAAlogrithm::default())
+    }
+}
 
 #[derive(PartialEq, Eq)]
 pub enum PCR{
@@ -49,9 +77,9 @@ impl PCR {
 
 pub struct MeasurementList {
     pub version: u8,                        // magic value = 1
-    pub appraise: u8,                       // 0:disable ima, 1:fix mode.
-    pub policy: u8,                         // default 1 for all files.
-    pub template: u8,                       // entry format template, default is '1:ima'.
+    pub appraise: u8,                       // 1:fix mode.
+    pub policy: u8,                         // 
+    pub template: u8,                       // algo for entry format template
     inner: BTreeMap<u64, MeasurementEntry>, // entry
 }
 

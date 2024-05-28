@@ -23,7 +23,7 @@ pub fn set_xattr(abs_path: &str,attribute: &str, value: &str) -> Result<(), Errn
             file_ino: file.unwrap().inode().ino(),
         };
         let inode = handler.xattr_block;
-        inode.write_at(inode.size(),&encode_xattr_entry(&data)[..]);
+        let _ = inode.write_at(inode.size(),&encode_xattr_entry(&data)[..]);
         Ok(())
     }else{
         Err(Errno::ENOTXATTR)

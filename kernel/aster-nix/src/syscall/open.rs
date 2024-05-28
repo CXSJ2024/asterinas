@@ -6,7 +6,7 @@ use crate::{
         file_handle::FileLike,
         file_table::{FdFlags, FileDesc},
         fs_resolver::{FsPath, AT_FDCWD},
-        utils::{CreationFlags, InodeType},
+        utils::CreationFlags,
     },
     prelude::*,
     security::integrity::ima::ima_appraisal::ima_appraisal_ih,
