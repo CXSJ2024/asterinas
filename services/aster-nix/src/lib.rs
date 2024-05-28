@@ -63,6 +63,7 @@ pub mod time;
 mod util;
 pub(crate) mod vdso;
 pub mod vm;
+pub mod security;
 
 pub fn init() {
     driver::init();
@@ -71,6 +72,7 @@ pub fn init() {
     fs::rootfs::init(boot::initramfs()).unwrap();
     device::init().unwrap();
     vdso::init();
+    security::security_init();
 }
 
 fn init_thread() {

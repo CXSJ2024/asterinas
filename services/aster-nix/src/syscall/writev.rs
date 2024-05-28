@@ -23,7 +23,9 @@ pub fn sys_writev(
     io_vec_count: usize,
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_WRITEV);
+    let _ = crate::security::integrity::ima::ima_appraisal::ima_appraisal_fd(fd);
     let res = do_sys_writev(fd, io_vec_ptr, io_vec_count)?;
+    let _ = crate::security::integrity::ima::ima_appraisal::ima_appraisal_fd(fd);
     Ok(SyscallReturn::Return(res as _))
 }
 

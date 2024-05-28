@@ -251,7 +251,7 @@ fn handle_get_quote(arg: usize) -> Result<i32> {
     write_bytes_to_user(tdx_quote.buf, &mut quote_buffer)?;
     Ok(0)
 }
-
+ 
 fn handle_extend_rtmr(arg: usize) -> Result<i32> {
     let extend_rtmr_req: TdxExtendRtmrReq = read_val_from_user(arg)?;
     if extend_rtmr_req.index < 2 {

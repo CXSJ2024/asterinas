@@ -33,5 +33,6 @@ pub fn sys_write(
     read_bytes_from_user(user_buf_ptr, &mut buffer)?;
     debug!("write content = {:?}", buffer);
     let write_len = file.write(&buffer)?;
+    let _ = crate::security::integrity::ima::ima_appraisal::ima_remeasure_fd(fd)?;
     Ok(SyscallReturn::Return(write_len as _))
 }
