@@ -2,11 +2,12 @@ use alloc::{boxed::Box, collections::BTreeMap, vec::Vec};
 
 use digest::DynDigest;
 use sha1::Sha1;
+use sha2::Sha384;
 use spin::{Mutex, MutexGuard};
 
 
 
-use crate::security::integrity::{ima::ima_hash::IMAAlogrithm, pcr::TdxRTMR};
+use crate::security::integrity::{ima::ima_hash::IMAAlogrithm, pcr::TdxRTMR, IMA_FEATURE_MODE};
 
 use super::entry::MeasurementEntry;
 
@@ -86,11 +87,15 @@ impl MeasurementList {
     const fn default() -> Self {
         MeasurementList {
             version: 1,
-            appraise: 1,
+            appraise: IMA_FEATURE_MODE,
             policy: 1,
             template: 1,
             inner: BTreeMap::new(),
         }
+    }
+
+    pub fn ima_feature_on(&self) -> bool{
+        self.appraise > 0
     }
 
     pub fn get_list() -> MutexGuard<'static, Self> {
@@ -143,10 +148,10 @@ impl MeasurementList {
 }
 
 
-// sha(read_pcr(reg)||data)
+// rtmr[reg] = sha384(rtmr[reg]||extend) used for RTMR extend
 fn default_extended_alg(old_data:PcrValue, new_data: PcrValue) -> PcrValue {
     let tmp = [old_data, new_data].concat();
-    let mut hasher:Box<dyn DynDigest> = Box::new(Sha1::default());
+    let mut hasher:Box<dyn DynDigest> = Box::new(Sha384::default());
     hasher.update(&tmp[..]);
     let mut res = [0 as u8; PCR_BITSIZE];
     res.copy_from_slice(&hasher.finalize().to_vec()[..PCR_BITSIZE]);

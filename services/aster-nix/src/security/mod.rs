@@ -7,10 +7,12 @@ use crate::print;
 pub mod integrity;
 pub mod xattr_ext2;
 
-pub fn security_init() {
-    let _ = integrity::ml::measurement_list_init();
-    xattr_ext2::xattr_init();
-    println_ml();
+pub fn init() {
+    if integrity::IMA_FEATURE_MODE > 0{
+        let _ = integrity::ml::measurement_list_init();
+        xattr_ext2::xattr_init();
+        println_ml();
+    }
 }
 
 fn println_ml(){

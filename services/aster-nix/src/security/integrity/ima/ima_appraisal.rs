@@ -7,19 +7,21 @@ use crate::{
     fs::{
         file_table::FileDescripter,
         inode_handle::InodeHandle,
-        utils::{Inode, InodeType, Dentry},
+        utils::{Dentry, Inode, InodeType},
     },
     prelude::*,
     security::{
         integrity::{
-            ima::ima_hash::IMAHash, 
-            ml::{self, entry::MeasurementEntry, entry_list,entry_list::*}
+            self, ima::ima_hash::IMAHash, ml::{self, entry::MeasurementEntry, entry_list::{self, *}}
         }, 
         xattr_ext2::getfattr::get_xattr
     },
 };
 
 pub fn ima_appraisal_dentry(dentry: &Dentry) -> Result<()> {
+    if integrity::IMA_FEATURE_MODE == 0{
+        return Ok(());
+    }
     if dentry.inode_type() != InodeType::File {
         return Ok(());
     }
@@ -27,6 +29,9 @@ pub fn ima_appraisal_dentry(dentry: &Dentry) -> Result<()> {
 }
 
 pub fn ima_appraisal_ih(fh: &InodeHandle) -> Result<()> {
+    if integrity::IMA_FEATURE_MODE == 0{
+        return Ok(());
+    }
     let dentry = fh.dentry();
     if dentry.inode_type() != InodeType::File {
         return Ok(());
@@ -35,6 +40,9 @@ pub fn ima_appraisal_ih(fh: &InodeHandle) -> Result<()> {
 }
 
 pub fn ima_appraisal_fd(fd: FileDescripter) -> Result<()> {
+    if integrity::IMA_FEATURE_MODE == 0{
+        return Ok(());
+    }
     let current = current!();
     let fs = current.fs().read();
     let dentry = fs.lookup_from_fd(fd).unwrap();
@@ -45,6 +53,9 @@ pub fn ima_appraisal_fd(fd: FileDescripter) -> Result<()> {
 }
 
 pub fn ima_remeasure_fd(fd: FileDescripter) -> Result<()> {
+    if integrity::IMA_FEATURE_MODE == 0{
+        return Ok(());
+    }
     let current = current!();
     let fs = current.fs().read();
     let dentry = fs.lookup_from_fd(fd).unwrap();
@@ -54,6 +65,7 @@ pub fn ima_remeasure_fd(fd: FileDescripter) -> Result<()> {
     println!("remeasure file: {}", &dentry.abs_path());
     ima_remeasure_handle(dentry.inode(), &dentry.abs_path())
 }
+
 
 fn ima_appraisal_handle(inode: &Arc<dyn Inode>, abs_path: &str) -> Result<()> {
     match get_xattr(abs_path, IMA_XATTR) {

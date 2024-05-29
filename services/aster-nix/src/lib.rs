@@ -72,7 +72,7 @@ pub fn init() {
     fs::rootfs::init(boot::initramfs()).unwrap();
     device::init().unwrap();
     vdso::init();
-    security::security_init();
+    security::init();
 }
 
 fn init_thread() {
