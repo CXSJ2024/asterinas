@@ -1,0 +1,28 @@
+// Test Memory
+sysbench --test=memory --memory-block-size=4K --memory-total-size=64M --memory-oper=write run
+sysbench --test=memory --memory-block-size=4K --memory-total-size=64M --memory-oper=read run
+sysbench --test=memory --memory-block-size=4K --memory-total-size=128M --memory-oper=write run
+sysbench --test=memory --memory-block-size=4K --memory-total-size=128M --memory-oper=read run
+sysbench --test=memory --memory-block-size=4K --memory-total-size=256M --memory-oper=write run
+sysbench --test=memory --memory-block-size=4K --memory-total-size=256M --memory-oper=read run
+sysbench --test=memory --memory-block-size=4K --memory-total-size=512M --memory-oper=write run
+sysbench --test=memory --memory-block-size=4K --memory-total-size=512M --memory-oper=read run
+sysbench --test=memory --memory-block-size=4K --memory-total-size=1G --memory-oper=write run
+sysbench --test=memory --memory-block-size=4K --memory-total-size=1G --memory-oper=read run
+sysbench --test=memory --memory-block-size=4K --memory-total-size=2G --memory-oper=write run
+sysbench --test=memory --memory-block-size=4K --memory-total-size=2G --memory-oper=read run
+sysbench --test=memory --memory-block-size=4K --memory-total-size=4G --memory-oper=write run
+sysbench --test=memory --memory-block-size=4K --memory-total-size=4G --memory-oper=read run
+sysbench --test=memory --memory-block-size=4K --memory-total-size=8G --memory-oper=write run
+sysbench --test=memory --memory-block-size=4K --memory-total-size=8G --memory-oper=read run
+sysbench --test=memory --memory-block-size=4K --memory-total-size=16G --memory-oper=write run
+sysbench --test=memory --memory-block-size=4K --memory-total-size=16G --memory-oper=read run
+sysbench --test=memory --memory-block-size=4K --memory-total-size=32G --memory-oper=write run
+sysbench --test=memory --memory-block-size=4K --memory-total-size=32G --memory-oper=read run
+sysbench --test=memory --memory-block-size=4K --memory-total-size=64G --memory-oper=write run
+sysbench --test=memory --memory-block-size=4K --memory-total-size=64G --memory-oper=read run
+
+// Test MMap Latency
+membench -runtime=5 -dir=/dev/zero -engine=mmap_lat -iter=100 -size=64M
+...
+membench -runtime=5 -dir=/dev/zero -engine=mmap_lat -iter=100 -size=64G

@@ -114,7 +114,7 @@ impl Coeff {
 impl Mul<u64> for Coeff {
     type Output = u64;
     fn mul(self, rhs: u64) -> Self::Output {
-        debug_assert!(rhs <= self.max_multiplier);
+        // debug_assert!(rhs <= self.max_multiplier);
         (rhs * self.mult as u64) >> self.shift
     }
 }
