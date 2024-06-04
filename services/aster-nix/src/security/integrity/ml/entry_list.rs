@@ -1,8 +1,4 @@
 use alloc::{boxed::Box, collections::BTreeMap, vec::Vec};
-
-use digest::DynDigest;
-use sha1::Sha1;
-use sha2::Sha384;
 use spin::{Mutex, MutexGuard};
 
 
@@ -114,7 +110,7 @@ impl MeasurementList {
     // tpm operation
     pub fn add_entry(&mut self, entry: MeasurementEntry) {
         if PCR::has_pcr(){
-            let extended_data = default_extended_alg(
+            let extended_data = PCR::op().replay_algo(
                 PCR::op().read_pcr(DEFAULT_PCR_REGISTER), 
                 entry.template_hash
             );
@@ -124,13 +120,6 @@ impl MeasurementList {
         self.inner.insert(entry_id as u64, entry);
     }
 
-    pub fn reset_pcr() {
-        if PCR::has_pcr(){
-            PCR::op().reset_pcr(DEFAULT_PCR_REGISTER);
-        }
-    }
-
-
 
     pub fn verify_ml(&self) -> bool {
         if !PCR::has_pcr() {
@@ -139,7 +128,7 @@ impl MeasurementList {
         let entries = self.get_all();
         let mut tmp_data: PcrValue = [0; PCR_BITSIZE];
         for entry in entries {
-            tmp_data = default_extended_alg(tmp_data,entry.template_hash);
+            tmp_data = PCR::op().replay_algo(tmp_data,entry.template_hash);
         }
         let expect = PCR::op().read_pcr(DEFAULT_PCR_REGISTER);
         tmp_data == expect
@@ -148,12 +137,4 @@ impl MeasurementList {
 }
 
 
-// rtmr[reg] = sha384(rtmr[reg]||extend) used for RTMR extend
-fn default_extended_alg(old_data:PcrValue, new_data: PcrValue) -> PcrValue {
-    let tmp = [old_data, new_data].concat();
-    let mut hasher:Box<dyn DynDigest> = Box::new(Sha384::default());
-    hasher.update(&tmp[..]);
-    let mut res = [0 as u8; PCR_BITSIZE];
-    res.copy_from_slice(&hasher.finalize().to_vec()[..PCR_BITSIZE]);
-    res
-}
+

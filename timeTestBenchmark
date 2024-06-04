@@ -25,4 +25,8 @@ sysbench --test=memory --memory-block-size=4K --memory-total-size=64G --memory-o
 // Test MMap Latency
 membench -runtime=5 -dir=/dev/zero -engine=mmap_lat -iter=100 -size=64M
 ...
-membench -runtime=5 -dir=/dev/zero -engine=mmap_lat -iter=100 -size=64G
+membench -runtime=5 -dir=/dev/zero -engine=mmap_lat -iter=100 -size=32G
+
+// Test Page Fault Latency
+dd if=/dev/zero of=512K.file bs=1K count=512
+membench -runtime=5 -dir=512K.file -size=512K -copysize=4K -engine=page_fault 

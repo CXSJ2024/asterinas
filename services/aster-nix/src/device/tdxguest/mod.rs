@@ -19,72 +19,72 @@ use tdx_guest::tdvmcall::{get_quote, setup_event_notify_interrupt, TdVmcallError
 use tdx_guest::SHARED_MASK;
 
 
-const TDX_REPORTDATA_LEN: usize = 64;
-const TDX_REPORT_LEN: usize = 1024;
-const TDX_EXTEND_RTMR_DATA_LEN: usize = 48;
+pub const TDX_REPORTDATA_LEN: usize = 64;
+pub const TDX_REPORT_LEN: usize = 1024;
+pub const TDX_EXTEND_RTMR_DATA_LEN: usize = 48;
 
 #[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
-struct TdxReportReq {
-    reportdata: [u8; TDX_REPORTDATA_LEN],
-    tdreport: [u8; TDX_REPORT_LEN],
+pub struct TdxReportReq {
+    pub reportdata: [u8; TDX_REPORTDATA_LEN],
+    pub tdreport: [u8; TDX_REPORT_LEN],
 }
 
 #[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
-struct TdxQuoteReq {
-    buf: usize,
-    len: usize,
+pub struct TdxQuoteReq {
+    pub buf: usize,
+    pub len: usize,
 }
 
 #[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
-struct TdxExtendRtmrReq {
-	data: [u8; TDX_EXTEND_RTMR_DATA_LEN],
-	index: u8,
+pub struct TdxExtendRtmrReq {
+	pub data: [u8; TDX_EXTEND_RTMR_DATA_LEN],
+	pub index: u8,
 }
 
 #[repr(align(64))]
 #[repr(C)]
-struct ReportDataWapper {
-    report_data: [u8; TDX_REPORTDATA_LEN],
+pub struct ReportDataWapper {
+    pub report_data: [u8; TDX_REPORTDATA_LEN],
 }
 
 #[repr(align(1024))]
 #[repr(C)]
-struct TdxReportWapper {
-    tdx_report: [u8; TDX_REPORT_LEN],
+pub struct TdxReportWapper {
+    pub tdx_report: [u8; TDX_REPORT_LEN],
 }
 
 #[repr(align(64))]
 #[repr(C)]
-struct ExtendRtmrWapper {
-    data: [u8; TDX_EXTEND_RTMR_DATA_LEN],
-	index: u8,
+pub struct ExtendRtmrWapper {
+    pub data: [u8; TDX_EXTEND_RTMR_DATA_LEN],
+	pub index: u8,
 }
 
-struct QuoteEntry {
+pub struct QuoteEntry {
     // Kernel buffer to share data with VMM (size is page aligned)
-    buf: DmaCoherent,
+    pub buf: DmaCoherent,
     // Size of the allocated memory
-    buf_len: usize,
+    pub buf_len: usize,
     // completion: GetQuoteCompletion,
     // Support parallel GetQuote requests
 
 }
 
 #[repr(C)]
-struct TdxQuoteHdr {
+pub struct TdxQuoteHdr {
     // Quote version, filled by TD
-    version: u64,
+    pub version: u64,
     // Status code of Quote request, filled by VMM
-    status: u64,
+    pub status: u64,
     // Length of TDREPORT, filled by TD
-    in_len: u32,
+    pub in_len: u32,
     // Length of Quote, filled by VMM
-    out_len: u32,
+    pub out_len: u32,
     // Actual Quote data or TDREPORT on input
-    data: Vec<u64>,
+    pub data: Vec<u64>,
 }
 
 // pub struct GetQuoteCompletion {
@@ -183,6 +183,7 @@ impl FileIo for TdxGuest {
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
+        println!("[TDX Call] get cmd: {:?}, arg = {:x}", cmd,arg);
         match cmd {
             IoctlCmd::TDXGETREPORT => handle_get_report(arg),
             IoctlCmd::TDXGETQUOTE => handle_get_quote(arg),
@@ -361,3 +362,40 @@ fn parse_quote_header(buffer: &[u8]) -> TdxQuoteHdr {
 //     // Register event notification IRQ to get Quote completion notification.
 //     tdx_event_irq.on_active(quote_callback_handler);
 // }
+
+
+// call inner asterinas kernel
+pub fn kernel_handle_get_report(tdx_report: TdxReportReq) -> Result<TdxReportWapper> {
+    let wrapped_report = TdxReportWapper {
+        tdx_report: tdx_report.tdreport,
+    };
+    let wrapped_data = ReportDataWapper {
+        report_data: tdx_report.reportdata,
+    };
+    if let Err(err) = get_report(
+        vaddr_to_paddr(wrapped_report.tdx_report.as_ptr() as usize).unwrap() as u64,
+        vaddr_to_paddr(wrapped_data.report_data.as_ptr() as usize).unwrap() as u64,
+    ) {
+        println!("[kernel]: get TDX report error");
+        return Err(err.into());
+    }
+    Ok(wrapped_report)
+}
+
+pub fn kernel_handle_extend_rtmr(extend_rtmr_req:ExtendRtmrWapper) -> Result<i32> {
+    if extend_rtmr_req.index < 2 {
+        return Err(Error::with_message(Errno::EINVAL, "Invalid parameter"));
+    }
+    let wrapped_extend_rtmr = ExtendRtmrWapper {
+        data: extend_rtmr_req.data,
+        index: extend_rtmr_req.index,
+    };
+    if let Err(err) = extend_rtmr(
+        vaddr_to_paddr(wrapped_extend_rtmr.data.as_ptr() as usize).unwrap() as u64,
+        wrapped_extend_rtmr.index as u64,
+    ) {
+        println!("[kernel]: TDX extend rtmr error");
+        return Err(err.into());
+    }
+    Ok(0)
+}

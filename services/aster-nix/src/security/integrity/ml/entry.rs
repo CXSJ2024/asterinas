@@ -9,7 +9,7 @@ use crate::security::integrity::ima::ima_hash::{IMAHash, VecU8,IMAAlogrithm};
 
 
 
-const HASH_DATA_SIZE:usize = 20;
+const HASH_DATA_SIZE:usize = PCR_BITSIZE;
 
 #[derive(Debug, Eq, PartialEq, Default, Clone)]
 pub enum EntryTemplate{
@@ -30,9 +30,9 @@ impl EntryTemplate {
 
     pub fn algo_from_u32(field:u32)->IMAAlogrithm{
         match field & 0x0f {
-            0x1 => IMAAlogrithm::SHA1,
+            0x1 => IMAAlogrithm::SHA384,
             0x2 => IMAAlogrithm::SHA256,
-            _ => IMAAlogrithm::SHA1,
+            _ => IMAAlogrithm::SHA384,
         }
     } 
 }
@@ -52,7 +52,7 @@ impl Into<String> for EntryTemplate{
 
 #[derive(Clone,Debug)]
 pub struct MeasurementEntry{
-    pub pcr: u32,                               // pcr no.
+    pub pcr: u8,                                // pcr no.
     pub template_hash: PcrValue,                // data to extend in pcr register
     pub filedata_hash: [u8;HASH_DATA_SIZE],     // file hash data
     pub filename_hint: String,                  // file path name
@@ -92,8 +92,8 @@ impl MeasurementEntry{
     pub fn new(hint:&str,template_data:&Vec<u8>, filedata:&Vec<u8>) -> Self{
         let mut template = [0;PCR_BITSIZE];
         let mut content = [0;HASH_DATA_SIZE];
-        template.clone_from_slice(&template_data[..]);
-        content.clone_from_slice(&filedata[..]);
+        template[..template_data.len()].clone_from_slice(&template_data[..]);
+        content[..template_data.len()].clone_from_slice(&filedata[..]);
         MeasurementEntry{ 
             pcr: DEFAULT_PCR_REGISTER, 
             template_hash: template, 

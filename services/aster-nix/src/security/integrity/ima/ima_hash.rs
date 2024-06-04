@@ -122,7 +122,7 @@ pub fn select_hasher(algo: &IMAAlogrithm) -> Box<dyn DynDigest> {
         IMAAlogrithm::SHA256 => Box::new(Sha256::default()),
         IMAAlogrithm::SHA384 => Box::new(Sha384::default()),
         IMAAlogrithm::SHA512 => Box::new(Sha512::default()),
-        _ => Box::new(Sha1::default()),
+        _ => Box::new(Sha384::default()),
     }
 }
 

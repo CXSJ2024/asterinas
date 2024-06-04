@@ -83,7 +83,7 @@ fn do_execve(
     envp_ptr_ptr: Vaddr,
     context: &mut UserContext,
 ) -> Result<()> {
-    crate::security::integrity::ima::ima_appraisal::ima_appraisal_dentry(elf_file.as_ref());
+    //crate::security::integrity::ima::ima_appraisal::ima_appraisal_dentry(elf_file.as_ref());
     let executable_path = elf_file.abs_path();
     let argv = read_cstring_vec(argv_ptr_ptr, MAX_ARGV_NUMBER, MAX_ARG_LEN)?;
     let envp = read_cstring_vec(envp_ptr_ptr, MAX_ENVP_NUMBER, MAX_ENV_LEN)?;

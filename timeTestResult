@@ -58,7 +58,6 @@ Asterinas,4G,302.07us,27.80us
 Asterinas,8G,292.55us,31.80us
 Asterinas,16G,321.56us,32.32us
 Asterinas,32G,340.02us,33.16us
-Asterinas,64G,306.45us,32.44us
 AsterinasTDX,64M,122.92ms,116.77ms
 AsterinasTDX,128M,257.47ms,241.44ms
 AsterinasTDX,256M,504.64ms,503.89ms
@@ -66,7 +65,6 @@ AsterinasTDX,512M,1056.07ms,1052.07ms
 AsterinasTDX,1G,2212.08ms,2202.96ms
 AsterinasTDX,2G,4966.82ms,4730.71ms
 AsterinasTDX,4G,9840.86ms,9698.81ms
-AsterinasTDX,8G,
-AsterinasTDX,16G,
-AsterinasTDX,32G,
-AsterinasTDX,64G,
+AsterinasTDX,8G,43704.34ms,30518.44ms
+AsterinasTDX,16G,132869.23ms,117217.63ms
+AsterinasTDX,32G,230939.07ms,204177.73ms

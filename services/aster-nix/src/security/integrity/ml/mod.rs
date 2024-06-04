@@ -23,9 +23,6 @@ pub mod entry;
 pub const MEASUREMENT_LIST_ASCII: &str = "/ascii_runtime_measurements";
 
 pub fn measurement_list_init() -> Result<()>{
-    if PCR::has_pcr(){
-        MeasurementList::reset_pcr();
-    }
     let fs_resolver = FsResolver::new();
     let root_inode = fs_resolver.root().inode();
     let ml_inode = root_inode.create(

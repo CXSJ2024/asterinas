@@ -34,7 +34,7 @@ pub fn sys_openat(
         let inode_handle = current.fs().read().open(&fs_path, flags, mask_mode)?;
         Arc::new(inode_handle)
     };
-    let _ = crate::security::integrity::ima::ima_appraisal::ima_appraisal_ih(&file_handle)?;
+    //let _ = crate::security::integrity::ima::ima_appraisal::ima_appraisal_ih(&file_handle)?;
     let mut file_table = current.file_table().lock();
     let fd = file_table.insert(file_handle);
     Ok(SyscallReturn::Return(fd as _))

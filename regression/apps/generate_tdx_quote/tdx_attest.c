@@ -257,7 +257,7 @@ tdx_attest_error_t tdx_att_get_quote(
         ret = TDX_ATTEST_ERROR_OUT_OF_MEMORY;
         goto ret_point;
     }
-
+ 
     devfd = open(TDX_ATTEST_DEV_PATH, O_RDWR | O_SYNC);
     if (-1 == devfd) {
         TDX_TRACE;

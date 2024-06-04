@@ -4,7 +4,7 @@ mod null;
 mod pty;
 mod random;
 #[cfg(feature = "intel_tdx")]
-mod tdxguest;
+pub mod tdxguest;
 pub mod tty;
 mod urandom;
 mod zero;

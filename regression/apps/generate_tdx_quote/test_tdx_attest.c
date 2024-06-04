@@ -125,7 +125,7 @@ int main(int argc, char *argv[])
     } else {
         fprintf(stderr, "\nSuccessfully extended rtmr[2]\n");
     }
-
+ 
     rtmr_event.rtmr_index = 3;
 
     if (TDX_ATTEST_SUCCESS != tdx_att_extend(&rtmr_event)) {
