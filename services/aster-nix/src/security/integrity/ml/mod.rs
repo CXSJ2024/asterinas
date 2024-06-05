@@ -1,4 +1,5 @@
 use alloc::string::String;
+use entry::MeasurementEntry;
 use entry_list::PCR;
 
 use crate::{
@@ -12,12 +13,14 @@ use self::entry_list::MeasurementList;
 
 use spin::MutexGuard;
 
+use super::pcr::{DEFAULT_PCR_REGISTER, PCR_BITSIZE};
+use alloc::boxed::Box;
+use digest::DynDigest;
+use sha2::Sha384;
 
 
 pub mod entry_list;
 pub mod entry;
-
-
 
 
 pub const MEASUREMENT_LIST_ASCII: &str = "/ascii_runtime_measurements";
@@ -30,6 +33,22 @@ pub fn measurement_list_init() -> Result<()>{
         crate::fs::utils::InodeType::File,
         InodeMode::all(),
     )?;
+    if PCR::has_pcr(){
+        let original_val = PCR::op().read_pcr(DEFAULT_PCR_REGISTER);
+        let mut hasher:Box<dyn DynDigest> = Box::new(Sha384::default());
+        let template_val = match PCR::dev_type(){
+            PCR::Ram => todo!(),
+            PCR::TpmChip => todo!(),
+            PCR::Tdx => {
+                [original_val.to_vec(),"/dev/tdx_guest".as_bytes().to_vec()].concat()
+            },
+        };
+        hasher.update(&template_val[..]);
+        let mut res = [0 as u8; PCR_BITSIZE];
+        res.copy_from_slice(&hasher.finalize().to_vec()[..PCR_BITSIZE]);
+        let boot_entry = MeasurementEntry::new("boot_aggregate", &res.to_vec(), &original_val.to_vec());
+        MeasurementList::get_list().add_entry(boot_entry);
+    }
     Ok(())
 }
 

@@ -62,7 +62,7 @@ impl PCR {
     }
 
     pub fn has_pcr() -> bool{
-        if Self::dev_type() == Self::Ram{
+        if Self::dev_type() == Self::Tdx{
             true
         }else{
             false
@@ -110,11 +110,7 @@ impl MeasurementList {
     // tpm operation
     pub fn add_entry(&mut self, entry: MeasurementEntry) {
         if PCR::has_pcr(){
-            let extended_data = PCR::op().replay_algo(
-                PCR::op().read_pcr(DEFAULT_PCR_REGISTER), 
-                entry.template_hash
-            );
-            PCR::op().extend_pcr(DEFAULT_PCR_REGISTER,extended_data);
+            PCR::op().extend_pcr(DEFAULT_PCR_REGISTER,entry.template_hash);
         }
         let entry_id = self.inner.len() + 1;
         self.inner.insert(entry_id as u64, entry);

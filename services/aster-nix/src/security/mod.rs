@@ -9,12 +9,12 @@ pub mod integrity;
 pub mod xattr_ext2;
 
 pub fn init() {
+    //test_tdx();
     if integrity::IMA_FEATURE_MODE > 0{
         let _ = integrity::ml::measurement_list_init();
         xattr_ext2::xattr_init();
         //println_ml();
     }
-    test_tdx();
 }
 
 fn println_ml(){
@@ -37,8 +37,8 @@ fn test_tdx(){
     println!("test_tdx: ref value = {:x?}",ref_val);
 
     let mut replay_val:[u8;48] = [0;48];
-    let replay_val = pcr_dev.replay_algo(test, data.clone());
+    let replay_val = pcr_dev.replay_algo(replay_val, data.clone());
     println!("test_tdx: replay value = {:x?}",replay_val);
     
-    assert_eq!(res,replay_val);
+    assert_eq!(ref_val,replay_val);
 }

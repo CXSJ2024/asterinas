@@ -31,7 +31,6 @@ impl PcrOp for TdxRTMR{
         if let Ok(wapper) = tdxguest::kernel_handle_get_report(req){
             let tdreport_info_offest:usize = 0x200;
             let tdreport_info_rtmrs_offest:usize = 0xd0;
-            let tdreport_info_rtmrs_len:usize = 4*TDX_EXTEND_RTMR_DATA_LEN;
             let target_offest = tdreport_info_offest + tdreport_info_rtmrs_offest + reg as usize * TDX_EXTEND_RTMR_DATA_LEN;
             let target_rtmr = &wapper.tdx_report[target_offest..target_offest+TDX_EXTEND_RTMR_DATA_LEN];
             res.copy_from_slice(&target_rtmr[..PCR_BITSIZE]);   
