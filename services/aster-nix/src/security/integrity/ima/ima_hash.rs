@@ -9,9 +9,9 @@ use crate::{fs::utils::Inode, prelude::*};
 
 #[derive(Debug, Eq, PartialEq, Default, Clone)]
 pub enum IMAAlogrithm {
-    #[default]
     SHA1,
     SHA256,
+    #[default]
     SHA384,
     SHA512,
     MD5,
