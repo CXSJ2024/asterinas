@@ -12,48 +12,45 @@ use crate::{
     prelude::*,
     security::{
         integrity::{
-            self, ima::ima_hash::IMAHash, ml::{self, entry::MeasurementEntry, entry_list::{self, *}}
-        }, 
-        xattr_ext2::getfattr::get_xattr
+            self,
+            ima::ima_hash::IMAHash,
+            ml::{
+                self,
+                entry::MeasurementEntry,
+                entry_list::{self, *},
+            },
+        },
+        xattr_ext2::getfattr::get_xattr,
     },
 };
 
 pub fn ima_appraisal_dentry(dentry: &Dentry) -> Result<()> {
-    if integrity::IMA_FEATURE_MODE == 0{
+    if integrity::IMA_FEATURE_MODE == 0 {
         return Ok(());
     }
-    if dentry.inode_type() != InodeType::File {
-        return Ok(());
-    }
-    ima_appraisal_handle(dentry.inode(), &dentry.abs_path())
+    ima_appraisal_handle(dentry, &dentry.abs_path())
 }
 
 pub fn ima_appraisal_ih(fh: &InodeHandle) -> Result<()> {
-    if integrity::IMA_FEATURE_MODE == 0{
+    if integrity::IMA_FEATURE_MODE == 0 {
         return Ok(());
     }
     let dentry = fh.dentry();
-    if dentry.inode_type() != InodeType::File {
-        return Ok(());
-    }
-    ima_appraisal_handle(dentry.inode(), &dentry.abs_path())
+    ima_appraisal_handle(dentry, &dentry.abs_path())
 }
 
 pub fn ima_appraisal_fd(fd: FileDescripter) -> Result<()> {
-    if integrity::IMA_FEATURE_MODE == 0{
+    if integrity::IMA_FEATURE_MODE == 0 {
         return Ok(());
     }
     let current = current!();
     let fs = current.fs().read();
     let dentry = fs.lookup_from_fd(fd).unwrap();
-    if dentry.inode_type() != InodeType::File {
-        return Ok(());
-    }
-    ima_appraisal_handle(dentry.inode(), &dentry.abs_path())
+    ima_appraisal_handle(&*dentry, &dentry.abs_path())
 }
 
 pub fn ima_remeasure_fd(fd: FileDescripter) -> Result<()> {
-    if integrity::IMA_FEATURE_MODE == 0{
+    if integrity::IMA_FEATURE_MODE == 0 || fd == 1 || fd == 2 || fd == 3 {
         return Ok(());
     }
     let current = current!();
@@ -62,16 +59,19 @@ pub fn ima_remeasure_fd(fd: FileDescripter) -> Result<()> {
     if dentry.inode_type() != InodeType::File {
         return Ok(());
     }
-    println!("remeasure file: {}", &dentry.abs_path());
+    //println!("remeasure file: {}", &dentry.abs_path());
     ima_remeasure_handle(dentry.inode(), &dentry.abs_path())
 }
 
-
-fn ima_appraisal_handle(inode: &Arc<dyn Inode>, abs_path: &str) -> Result<()> {
+fn ima_appraisal_handle(dentry: &Dentry, abs_path: &str) -> Result<()> {
+    if dentry.inode_type() != InodeType::File {
+        return Ok(());
+    }
+    let inode = dentry.inode();
     match get_xattr(abs_path, IMA_XATTR) {
         Ok(val) => {
             let expect = IMAHash::from(val.value);
-            let res = cal_fd_hash(inode, 1024, Some(expect.algo.clone()),Some(abs_path))?;
+            let res = cal_fd_hash(inode, 1024, Some(expect.algo.clone()), None)?;
             if res != expect {
                 println!(
                     "error!!!\nabs_path: {}\nexpected: {:?}\nactual: {:?}\n",
@@ -89,19 +89,24 @@ fn ima_appraisal_handle(inode: &Arc<dyn Inode>, abs_path: &str) -> Result<()> {
 
 fn ima_remeasure_handle(inode: &Arc<dyn Inode>, abs_path: &str) -> Result<()> {
     let mut ml = entry_list::MeasurementList::get_list();
-    if !check_hint(abs_path, ml.appraise){
+    if !check_hint(abs_path, ml.appraise) {
+        //println!("{} not in measure path, skip", abs_path);
         return Ok(());
     }
-    let hash = if let Ok(val) = get_xattr(abs_path, IMA_XATTR){
+    let hash = if let Ok(val) = get_xattr(abs_path, IMA_XATTR) {
         IMAHash::from(val.value).algo
-    }else{
+    } else {
         IMAAlogrithm::default()
     };
-    let tpmplate_hash = cal_fd_hash(inode, 1024, Some(hash.clone()),Some(abs_path))?;
-    let content_hash = cal_fd_hash(inode, 1024, Some(hash.clone()),None)?;
-    ml.add_entry(MeasurementEntry::new(abs_path, &tpmplate_hash.hash.data, &content_hash.hash.data));
+    let tpmplate_hash = cal_fd_hash(inode, 1024, Some(hash.clone()), Some(abs_path))?;
+    let content_hash = cal_fd_hash(inode, 1024, Some(hash.clone()), None)?;
+    ml.add_entry(MeasurementEntry::new(
+        abs_path,
+        &tpmplate_hash.hash.data,
+        &content_hash.hash.data,
+    ));
     let _ = ml::sync_write_file(&mut ml);
-    let res_string: String = tpmplate_hash.into();
+    let res_string: String = content_hash.into();
     let _ = set_xattr(abs_path, IMA_XATTR, &res_string)?;
     Ok(())
 }

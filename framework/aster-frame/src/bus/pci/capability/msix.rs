@@ -94,7 +94,9 @@ impl CapabilityMsixData {
         for i in 0..table_size {
             // set shared
             #[cfg(feature = "intel_tdx")]
-            unsafe { unprotect_gpa_range(table_bar.io_mem().paddr(), 1).unwrap() };
+            unsafe {
+                unprotect_gpa_range(table_bar.io_mem().paddr(), 1).unwrap()
+            };
             // Set message address and disable this msix entry
             table_bar
                 .io_mem()

@@ -27,7 +27,9 @@ static IRQS: SpinLock<Vec<IrqLine>> = SpinLock::new(Vec::new());
 pub fn init() {
     // set shared
     #[cfg(feature = "intel_tdx")]
-    unsafe { unprotect_gpa_range(0xFEB0_0000, 4).unwrap() };
+    unsafe {
+        unprotect_gpa_range(0xFEB0_0000, 4).unwrap()
+    };
     // FIXME: The address 0xFEB0_0000 is obtained from an instance of microvm, and it may not work in other architecture.
     iter_range(0xFEB0_0000..0xFEB0_4000);
 }

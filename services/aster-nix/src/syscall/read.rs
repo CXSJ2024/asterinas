@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::log_syscall_entry;
+use crate::security::integrity::ima::ima_appraisal::ima_appraisal_fd;
 use crate::util::write_bytes_to_user;
 use crate::{fs::file_table::FileDescripter, prelude::*};
 
@@ -13,6 +14,7 @@ pub fn sys_read(fd: FileDescripter, user_buf_addr: Vaddr, buf_len: usize) -> Res
         "fd = {}, user_buf_ptr = 0x{:x}, buf_len = 0x{:x}",
         fd, user_buf_addr, buf_len
     );
+    ima_appraisal_fd(fd.clone())?;
     let current = current!();
     let file_table = current.file_table().lock();
     let file = file_table.get_file(fd)?;

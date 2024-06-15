@@ -149,7 +149,7 @@ pub enum Errno {
 
     EHWPOISON = 133, /* Memory page has hardware error */
 
-    ENOTXATTR = 134 /* Xattr no present*/
+    ENOTXATTR = 134, /* Xattr no present*/
 }
 
 /// error used in this crate

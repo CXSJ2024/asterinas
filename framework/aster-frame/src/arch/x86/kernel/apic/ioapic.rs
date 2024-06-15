@@ -155,7 +155,9 @@ pub fn init() {
             const IO_APIC_DEFAULT_ADDRESS: usize = 0xFEC0_0000;
             // set shared
             #[cfg(feature = "intel_tdx")]
-            unsafe { unprotect_gpa_range(IO_APIC_DEFAULT_ADDRESS, 1).unwrap() };
+            unsafe {
+                unprotect_gpa_range(IO_APIC_DEFAULT_ADDRESS, 1).unwrap()
+            };
             let mut io_apic = unsafe { IoApicAccess::new(IO_APIC_DEFAULT_ADDRESS) };
             io_apic.set_id(0);
             let id = io_apic.id();

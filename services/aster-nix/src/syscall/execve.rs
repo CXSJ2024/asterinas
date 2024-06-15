@@ -13,6 +13,7 @@ use crate::process::posix_thread::{PosixThreadExt, ThreadName};
 use crate::process::{
     check_executable_file, credentials_mut, load_program_to_vm, Credentials, Gid, Uid,
 };
+use crate::security::integrity::ima::ima_appraisal::ima_appraisal_dentry;
 use crate::syscall::{SYS_EXECVE, SYS_EXECVEAT};
 use crate::util::{read_cstring_from_user, read_val_from_user};
 
@@ -83,7 +84,7 @@ fn do_execve(
     envp_ptr_ptr: Vaddr,
     context: &mut UserContext,
 ) -> Result<()> {
-    //crate::security::integrity::ima::ima_appraisal::ima_appraisal_dentry(elf_file.as_ref());
+    ima_appraisal_dentry(elf_file.as_ref())?;
     let executable_path = elf_file.abs_path();
     let argv = read_cstring_vec(argv_ptr_ptr, MAX_ARGV_NUMBER, MAX_ARG_LEN)?;
     let envp = read_cstring_vec(envp_ptr_ptr, MAX_ENVP_NUMBER, MAX_ENV_LEN)?;

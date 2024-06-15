@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::fs::file_table::FileDescripter;
-use crate::{log_syscall_entry, prelude::*};
-
+use crate::security::integrity::ima::ima_appraisal::{ima_appraisal_fd, ima_remeasure_fd};
 use crate::syscall::SYS_WRITE;
 use crate::util::read_bytes_from_user;
+use crate::{log_syscall_entry, prelude::*};
 
 use super::SyscallReturn;
 
@@ -21,7 +21,7 @@ pub fn sys_write(
         "fd = {}, user_buf_ptr = 0x{:x}, user_buf_len = 0x{:x}",
         fd, user_buf_ptr, user_buf_len
     );
-
+    ima_appraisal_fd(fd)?;
     let current = current!();
     let file_table = current.file_table().lock();
     let file = file_table.get_file(fd)?;
@@ -33,6 +33,6 @@ pub fn sys_write(
     read_bytes_from_user(user_buf_ptr, &mut buffer)?;
     debug!("write content = {:?}", buffer);
     let write_len = file.write(&buffer)?;
-    //let _ = crate::security::integrity::ima::ima_appraisal::ima_remeasure_fd(fd)?;
+    ima_remeasure_fd(fd)?;
     Ok(SyscallReturn::Return(write_len as _))
 }

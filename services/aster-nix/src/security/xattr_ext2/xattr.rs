@@ -11,16 +11,11 @@ use crate::{
 use spin::MutexGuard;
 
 use crate::security::integrity::{
-    ml::{
-        entry::MeasurementEntry,
-        entry_list::*,
-        entry_list
-    },
     ima::ima_hash::cal_fd_hash,
+    ml::{entry::MeasurementEntry, entry_list, entry_list::*},
 };
 
-use super::{set_xattr,XATTR_PATH,IMA_XATTR_KEY};
-
+use super::{set_xattr, IMA_XATTR_KEY, XATTR_PATH};
 
 pub struct Xattr {
     pub xattr_block: Arc<dyn Inode>,
@@ -47,22 +42,36 @@ impl Xattr {
     }
 }
 
-
-
-pub fn measure_all(ml:&mut MutexGuard<'static, entry_list::MeasurementList>,resolver: &FsResolver, root_dir: &str) -> crate::prelude::Result<()> {
+pub fn measure_all(
+    ml: &mut MutexGuard<'static, entry_list::MeasurementList>,
+    resolver: &FsResolver,
+    root_dir: &str,
+) -> crate::prelude::Result<()> {
     let fs_handler = {
         let path = FsPath::new(0, root_dir)?;
         resolver.open(&path, 0, 0)?
     };
     if fs_handler.dentry().inode_type() == InodeType::File {
         let algo = select_ima_algo(ml.template);
-        let measurement: String = cal_fd_hash(fs_handler.dentry().inode(), 1024, None,Some(root_dir))?.into();
+        let measurement: String =
+            cal_fd_hash(fs_handler.dentry().inode(), 1024, None, Some(root_dir))?.into();
         set_xattr(root_dir, IMA_XATTR_KEY, &measurement)?;
-        let template_hash = cal_fd_hash(fs_handler.dentry().inode(), 1024, algo.clone(),Some(root_dir))?.hash.data;
-        let content_hash = cal_fd_hash(fs_handler.dentry().inode(), 1024, algo.clone(),None)?.hash.data;
-        let entry = MeasurementEntry::new(root_dir,&template_hash,&content_hash);
+        let template_hash = cal_fd_hash(
+            fs_handler.dentry().inode(),
+            1024,
+            algo.clone(),
+            Some(root_dir),
+        )?
+        .hash
+        .data;
+        let content_hash = cal_fd_hash(fs_handler.dentry().inode(), 1024, algo.clone(), None)?
+            .hash
+            .data;
+        let entry = MeasurementEntry::new(root_dir, &template_hash, &content_hash);
         ml.add_entry(entry);
-    } else if fs_handler.dentry().inode_type() == InodeType::Dir && check_hint(root_dir,ml.appraise){
+    } else if fs_handler.dentry().inode_type() == InodeType::Dir
+        && check_hint(root_dir, ml.appraise)
+    {
         let mut items: Vec<String> = Vec::new();
         fs_handler.readdir(&mut items)?;
         for item in items {
@@ -70,7 +79,7 @@ pub fn measure_all(ml:&mut MutexGuard<'static, entry_list::MeasurementList>,reso
                 continue;
             }
             let abs_path = format!("{}/{}", root_dir, item);
-            measure_all(ml,resolver, abs_path.as_str())?;
+            measure_all(ml, resolver, abs_path.as_str())?;
         }
     }
     Ok(())

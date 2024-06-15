@@ -3,6 +3,7 @@
 use crate::fs::file_table::FileDescripter;
 use crate::{log_syscall_entry, prelude::*};
 
+use crate::security::integrity::ima::ima_appraisal::{ima_appraisal_fd, ima_remeasure_fd};
 use crate::syscall::SYS_WRITEV;
 use crate::util::{read_bytes_from_user, read_val_from_user};
 
@@ -23,9 +24,9 @@ pub fn sys_writev(
     io_vec_count: usize,
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_WRITEV);
-    //let _ = crate::security::integrity::ima::ima_appraisal::ima_appraisal_fd(fd);
+    ima_appraisal_fd(fd)?;
     let res = do_sys_writev(fd, io_vec_ptr, io_vec_count)?;
-    //let _ = crate::security::integrity::ima::ima_appraisal::ima_appraisal_fd(fd);
+    ima_remeasure_fd(fd)?;
     Ok(SyscallReturn::Return(res as _))
 }
 

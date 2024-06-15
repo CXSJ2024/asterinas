@@ -1,7 +1,6 @@
-use alloc::{format, string::String, vec::Vec};
 use super::xattr::XattrEntry;
 use crate::Errno;
-
+use alloc::{format, string::String, vec::Vec};
 
 pub fn encode_xattr_entry(xattr: &XattrEntry) -> Vec<u8> {
     format!("{}|{}|{}\n", xattr.attribute, xattr.value, xattr.file_ino)

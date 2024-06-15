@@ -14,10 +14,9 @@ use aster_frame::config::PAGE_SIZE;
 use aster_frame::sync::WaitQueue;
 use aster_frame::vm::{vaddr_to_paddr, DmaCoherent, HasPaddr, VmAllocOptions, VmIo};
 // use aster_frame::vm::DmaDirection;
-use tdx_guest::tdcall::{get_report, extend_rtmr, TdCallError};
+use tdx_guest::tdcall::{extend_rtmr, get_report, TdCallError};
 use tdx_guest::tdvmcall::{get_quote, setup_event_notify_interrupt, TdVmcallError};
 use tdx_guest::SHARED_MASK;
-
 
 pub const TDX_REPORTDATA_LEN: usize = 64;
 pub const TDX_REPORT_LEN: usize = 1024;
@@ -40,8 +39,8 @@ pub struct TdxQuoteReq {
 #[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
 pub struct TdxExtendRtmrReq {
-	pub data: [u8; TDX_EXTEND_RTMR_DATA_LEN],
-	pub index: u8,
+    pub data: [u8; TDX_EXTEND_RTMR_DATA_LEN],
+    pub index: u8,
 }
 
 #[repr(align(64))]
@@ -60,7 +59,7 @@ pub struct TdxReportWapper {
 #[repr(C)]
 pub struct ExtendRtmrWapper {
     pub data: [u8; TDX_EXTEND_RTMR_DATA_LEN],
-	pub index: u8,
+    pub index: u8,
 }
 
 pub struct QuoteEntry {
@@ -70,7 +69,6 @@ pub struct QuoteEntry {
     pub buf_len: usize,
     // completion: GetQuoteCompletion,
     // Support parallel GetQuote requests
-
 }
 
 #[repr(C)]
@@ -183,7 +181,7 @@ impl FileIo for TdxGuest {
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        println!("[TDX Call] get cmd: {:?}, arg = {:x}", cmd,arg);
+        println!("[TDX Call] get cmd: {:?}, arg = {:x}", cmd, arg);
         match cmd {
             IoctlCmd::TDXGETREPORT => handle_get_report(arg),
             IoctlCmd::TDXGETQUOTE => handle_get_quote(arg),
@@ -247,12 +245,12 @@ fn handle_get_quote(arg: usize) -> Result<i32> {
         if quote_hdr.status != GET_QUOTE_IN_FLIGHT {
             break;
         }
-    };
+    }
     entry.buf.read_bytes(0, &mut quote_buffer)?;
     write_bytes_to_user(tdx_quote.buf, &mut quote_buffer)?;
     Ok(0)
 }
- 
+
 fn handle_extend_rtmr(arg: usize) -> Result<i32> {
     let extend_rtmr_req: TdxExtendRtmrReq = read_val_from_user(arg)?;
     if extend_rtmr_req.index < 2 {
@@ -363,7 +361,6 @@ fn parse_quote_header(buffer: &[u8]) -> TdxQuoteHdr {
 //     tdx_event_irq.on_active(quote_callback_handler);
 // }
 
-
 // call inner asterinas kernel
 pub fn kernel_handle_get_report(tdx_report: TdxReportReq) -> Result<TdxReportWapper> {
     let wrapped_report = TdxReportWapper {
@@ -382,7 +379,7 @@ pub fn kernel_handle_get_report(tdx_report: TdxReportReq) -> Result<TdxReportWap
     Ok(wrapped_report)
 }
 
-pub fn kernel_handle_extend_rtmr(extend_rtmr_req:ExtendRtmrWapper) -> Result<i32> {
+pub fn kernel_handle_extend_rtmr(extend_rtmr_req: ExtendRtmrWapper) -> Result<i32> {
     if extend_rtmr_req.index < 2 {
         return Err(Error::with_message(Errno::EINVAL, "Invalid parameter"));
     }

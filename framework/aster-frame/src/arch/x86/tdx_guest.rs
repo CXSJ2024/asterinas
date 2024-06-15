@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use crate::early_println;
 use crate::{
     arch::mm::{is_kernel_vaddr, PageTableFlags},
     config::PAGE_SIZE,
@@ -8,7 +9,6 @@ use crate::{
         page_table::{PageTableError, KERNEL_PAGE_TABLE},
     },
 };
-use crate::early_println;
 use iced_x86::{Code, Decoder, DecoderOptions, Instruction, Register};
 use log::warn;
 use tdx_guest::{

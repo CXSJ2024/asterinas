@@ -3,6 +3,7 @@
 //! This mod defines mmap flags and the handler to syscall mmap
 
 use crate::fs::file_table::FileDescripter;
+use crate::security::integrity::ima::ima_appraisal::ima_appraisal_dentry;
 use crate::vm::perms::VmPerms;
 use crate::vm::vmo::{Vmo, VmoChildOptions, VmoOptions, VmoRightsOp};
 use crate::{log_syscall_entry, prelude::*};
@@ -99,7 +100,7 @@ fn alloc_filebacked_vmo(
     let page_cache_vmo = {
         let fs_resolver = current.fs().read();
         let dentry = fs_resolver.lookup_from_fd(fd)?;
-        //crate::security::integrity::ima::ima_appraisal::ima_appraisal_dentry(&dentry)?;
+        ima_appraisal_dentry(&dentry)?;
         let inode = dentry.inode();
         inode
             .page_cache()
