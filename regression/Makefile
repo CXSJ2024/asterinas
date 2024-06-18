@@ -10,7 +10,6 @@ EXT2_IMAGE := $(BUILD_DIR)/ext2.img
 SHELL := /bin/bash
 INITRAMFS_EMPTY_DIRS := \
 	$(INITRAMFS)/sbin \
-	$(INITRAMFS)/root \
 	$(INITRAMFS)/tmp \
 	$(INITRAMFS)/opt \
 	$(INITRAMFS)/proc \
@@ -24,7 +23,10 @@ INITRAMFS_ALL_DIRS := \
 	$(INITRAMFS)/usr/bin \
 	$(INITRAMFS)/regression \
 	$(INITRAMFS)/benchmark \
+	$(INITRAMFS)/root \
 	$(INITRAMFS_EMPTY_DIRS)
+
+WATCHED_FILES := $(shell find $(CUR_DIR) -type f)
 
 .PHONY: all clean
 
@@ -72,12 +74,16 @@ $(INITRAMFS)/usr/bin: $(INITRAMFS)/bin
 # Copy from apps.
 $(INITRAMFS)/regression:
 	@make --no-print-directory -C apps
+	@cp ${CUR_DIR}/root/random_file* $@/io_test
+	@cp ${CUR_DIR}/root/*.sh $@/io_test
+	@cp ${CUR_DIR}/*.sh $@/ld_test
 
 $(INITRAMFS)/benchmark:
 	@mkdir -p $@
 	@cp /usr/local/benchmark/sysbench/bin/sysbench $@
 	@cp /usr/local/benchmark/iperf/bin/iperf3 $@
 	@cp /usr/local/benchmark/membench/membench $@
+	@cp ${CUR_DIR}/benchmark/file_io.sh $@
 
 # Make necessary directories.
 $(INITRAMFS_EMPTY_DIRS):
@@ -86,12 +92,14 @@ $(INITRAMFS_EMPTY_DIRS):
 $(INITRAMFS)/opt/syscall_test:
 	@make --no-print-directory -C syscall_test
 
+$(INITRAMFS)/root:
+	@cp -r $(CUR_DIR)/root $@
 # If the BUILD_SYSCALL_TEST variable is set, we should depend on the
 # sub make output to do incremental building.
 ifeq ($(BUILD_SYSCALL_TEST), 1)
-$(INITRAMFS_IMAGE): $(INITRAMFS_ALL_DIRS) $(INITRAMFS)/opt/syscall_test
+$(INITRAMFS_IMAGE): $(INITRAMFS_ALL_DIRS) $(INITRAMFS)/opt/syscall_test $(WATCHED_FILES)
 else
-$(INITRAMFS_IMAGE): $(INITRAMFS_ALL_DIRS)
+$(INITRAMFS_IMAGE): $(INITRAMFS_ALL_DIRS) $(WATCHED_FILES)
 endif
 	@echo "Generating the initramfs image..."
 	@(cd $(INITRAMFS); find . | cpio -o -H newc | gzip) > $@

@@ -54,7 +54,7 @@ pub fn measure_all(
     if fs_handler.dentry().inode_type() == InodeType::File {
         let algo = select_ima_algo(ml.template);
         let measurement: String =
-            cal_fd_hash(fs_handler.dentry().inode(), 1024, None, Some(root_dir))?.into();
+            cal_fd_hash(fs_handler.dentry().inode(), 1024, None, None)?.into();
         set_xattr(root_dir, IMA_XATTR_KEY, &measurement)?;
         let template_hash = cal_fd_hash(
             fs_handler.dentry().inode(),

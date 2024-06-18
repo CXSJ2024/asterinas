@@ -23,7 +23,9 @@ use crate::{
         xattr_ext2::getfattr::get_xattr,
     },
 };
-
+//TODO!!!:
+//1. hook mmap write back process to do remeasure.
+//2. handle output redirection
 pub fn ima_appraisal_dentry(dentry: &Dentry) -> Result<()> {
     if integrity::IMA_FEATURE_MODE == 0 {
         return Ok(());
@@ -31,7 +33,7 @@ pub fn ima_appraisal_dentry(dentry: &Dentry) -> Result<()> {
     ima_appraisal_handle(dentry, &dentry.abs_path())
 }
 
-pub fn ima_appraisal_ih(fh: &InodeHandle) -> Result<()> {
+pub fn ima_appraisal_fh(fh: &InodeHandle) -> Result<()> {
     if integrity::IMA_FEATURE_MODE == 0 {
         return Ok(());
     }
@@ -40,17 +42,24 @@ pub fn ima_appraisal_ih(fh: &InodeHandle) -> Result<()> {
 }
 
 pub fn ima_appraisal_fd(fd: FileDescripter) -> Result<()> {
-    if integrity::IMA_FEATURE_MODE == 0 {
-        return Ok(());
+    if integrity::IMA_FEATURE_MODE == 0 || fd == 0 || fd == 1 || fd == 2 {
+           return Ok(());
     }
     let current = current!();
     let fs = current.fs().read();
-    let dentry = fs.lookup_from_fd(fd).unwrap();
-    ima_appraisal_handle(&*dentry, &dentry.abs_path())
+    // let dentry = fs.lookup_from_fd(fd).unwrap();
+    match fs.lookup_from_fd(fd)
+{    
+   Ok(dentry)=> ima_appraisal_handle(&*dentry, &dentry.abs_path()),
+   Err(e)=>{
+        // println!("fd {}, {:?}",fd,e);
+        Ok(())
+   }
+}
 }
 
 pub fn ima_remeasure_fd(fd: FileDescripter) -> Result<()> {
-    if integrity::IMA_FEATURE_MODE == 0 || fd == 1 || fd == 2 || fd == 3 {
+    if integrity::IMA_FEATURE_MODE == 0 || fd == 1 || fd == 2  {
         return Ok(());
     }
     let current = current!();
@@ -59,7 +68,6 @@ pub fn ima_remeasure_fd(fd: FileDescripter) -> Result<()> {
     if dentry.inode_type() != InodeType::File {
         return Ok(());
     }
-    //println!("remeasure file: {}", &dentry.abs_path());
     ima_remeasure_handle(dentry.inode(), &dentry.abs_path())
 }
 
@@ -90,7 +98,6 @@ fn ima_appraisal_handle(dentry: &Dentry, abs_path: &str) -> Result<()> {
 fn ima_remeasure_handle(inode: &Arc<dyn Inode>, abs_path: &str) -> Result<()> {
     let mut ml = entry_list::MeasurementList::get_list();
     if !check_hint(abs_path, ml.appraise) {
-        //println!("{} not in measure path, skip", abs_path);
         return Ok(());
     }
     let hash = if let Ok(val) = get_xattr(abs_path, IMA_XATTR) {
@@ -108,6 +115,7 @@ fn ima_remeasure_handle(inode: &Arc<dyn Inode>, abs_path: &str) -> Result<()> {
     let _ = ml::sync_write_file(&mut ml);
     let res_string: String = content_hash.into();
     let _ = set_xattr(abs_path, IMA_XATTR, &res_string)?;
+    //println!("path: {}\nremeasure result {}", abs_path, &res_string);
     Ok(())
 }
 
